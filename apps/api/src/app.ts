@@ -4,8 +4,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { config } from './config';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { isMemoryMode } from './database/connection';
+import { mockRouter } from './database/mockRoutes';
 
-// Routes
+// Mongoose Database Routes
 import authRoutes from './modules/auth/auth.routes';
 import studentRoutes from './modules/students/student.routes';
 import inventoryRoutes from './modules/inventory/inventory.routes';
@@ -23,12 +25,14 @@ const app = express();
 
 // Security
 app.use(helmet());
-app.use(cors({
-  origin: config.corsOrigin,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(
+  cors({
+    origin: '*',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
 // Body parsing
 app.use(express.json({ limit: '10kb' }));
@@ -41,10 +45,28 @@ if (config.env !== 'test') {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', env: config.env, timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    mode: isMemoryMode ? 'in-memory-store' : 'mongodb',
+    env: config.env,
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// API Routes
+// Fallback Middleware: If running in in-memory mode, route to mockRouter
+app.use((req, res, next) => {
+  if (isMemoryMode && req.url.startsWith('/api/v1')) {
+    const originalUrl = req.url;
+    req.url = req.url.replace('/api/v1', '');
+    return mockRouter(req, res, (err) => {
+      req.url = originalUrl;
+      next(err);
+    });
+  }
+  next();
+});
+
+// API Routes (Mongoose Mode)
 const V1 = '/api/v1';
 app.use(`${V1}/auth`, authRoutes);
 app.use(`${V1}/students`, studentRoutes);

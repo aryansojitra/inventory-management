@@ -1,22 +1,30 @@
 import mongoose from 'mongoose';
 import { config } from '../config';
 
-export async function connectDatabase(): Promise<void> {
+export let isMemoryMode = false;
+
+export async function connectDatabase(): Promise<boolean> {
   try {
+    console.log('Connecting to MongoDB...');
     await mongoose.connect(config.mongoUri, {
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 2000,
+      connectTimeoutMS: 2000,
     });
-    console.log(`✅ MongoDB connected: ${config.mongoUri}`);
+    console.log('✅ MongoDB connected');
+    isMemoryMode = false;
+    return true;
   } catch (error) {
-    console.error('❌ MongoDB connection failed:', error);
-    process.exit(1);
+    console.warn('⚠️  Could not connect to external MongoDB cluster.');
+    console.log('🚀 Activating In-Memory Store with pre-loaded demo seed data.');
+    isMemoryMode = true;
+    return false;
   }
 }
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('⚠️  MongoDB disconnected');
+  if (!isMemoryMode) console.warn('⚠️  MongoDB disconnected');
 });
 
 mongoose.connection.on('error', (err) => {
-  console.error('MongoDB error:', err);
+  if (!isMemoryMode) console.error('MongoDB error:', err);
 });

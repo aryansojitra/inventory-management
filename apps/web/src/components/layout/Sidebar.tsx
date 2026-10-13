@@ -28,7 +28,14 @@ export const Sidebar: React.FC = () => {
     navigate('/login');
   };
 
-  const coordinatorLinks = [
+  interface NavLinkItem {
+    to: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: string;
+  }
+
+  const coordinatorLinks: NavLinkItem[] = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/inventory', label: 'Inventory Items', icon: Boxes },
     {
@@ -46,7 +53,7 @@ export const Sidebar: React.FC = () => {
     { to: '/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
   ];
 
-  const studentLinks = [
+  const studentLinks: NavLinkItem[] = [
     { to: '/student/portal', label: 'My Borrowings', icon: GraduationCap },
     { to: '/student/catalog', label: 'Browse Catalog', icon: Boxes },
   ];
