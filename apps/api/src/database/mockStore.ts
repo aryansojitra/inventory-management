@@ -587,7 +587,7 @@ export const mockStore = {
     const student = typeof issue.studentId === 'object' ? issue.studentId : mockData.students.find((s) => s._id === issue.studentId);
 
     payload.items.forEach((retItem: any) => {
-      const line = issue.lines.find((l) => l._id === retItem.lineId);
+      const line = issue.lines.find((l: any) => l._id === retItem.lineId);
       if (!line) return;
 
       line.returnedQuantity = (line.returnedQuantity || 0) + retItem.quantityReturned;
@@ -612,7 +612,7 @@ export const mockStore = {
       }
     });
 
-    const allReturned = issue.lines.every((l) => (l.returnedQuantity || 0) >= l.quantity);
+    const allReturned = issue.lines.every((l: any) => (l.returnedQuantity || 0) >= l.quantity);
     issue.status = allReturned ? 'returned' : 'partially_returned';
 
     const newReturn = {
@@ -647,7 +647,7 @@ export const mockStore = {
     const issue = mockData.issues.find((i) => i._id === payload.issueId);
     if (!issue) throw new Error('Issue not found');
 
-    const line = issue.lines.find((l) => l._id === payload.lineId);
+    const line = issue.lines.find((l: any) => l._id === payload.lineId);
     if (!line) throw new Error('Line not found');
 
     if ((line.renewalCount || 0) >= (line.maxRenewals || 3)) {
@@ -685,7 +685,7 @@ export const mockStore = {
 
     const issue = mockData.issues.find((i) => i._id === ren.issueId);
     if (issue) {
-      const line = issue.lines.find((l) => l._id === ren.lineId);
+      const line = issue.lines.find((l: any) => l._id === ren.lineId);
       if (line) {
         line.dueDate = ren.proposedDueDate;
         line.renewalCount = (line.renewalCount || 0) + 1;
