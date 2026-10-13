@@ -20,10 +20,12 @@ export function formatDateTime(dateStr: string | Date | null | undefined): strin
   });
 }
 
-export function calculateOverdueDays(dueDateStr: string | Date): number {
+export function calculateOverdueDays(dueDateStr: string | Date | null | undefined): number {
+  if (!dueDateStr) return 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const due = new Date(dueDateStr);
+  if (isNaN(due.getTime())) return 0;
   due.setHours(0, 0, 0, 0);
   const diff = today.getTime() - due.getTime();
   if (diff <= 0) return 0;

@@ -64,11 +64,31 @@ function normalizeRecord(record: any, now: Date) {
   const lines = (record.lines || []).map((l: any) =>
     typeof l === 'object' && l._id ? normalizeLine(l, now) : l
   );
+  const primaryLine = lines.length > 0 ? lines[0] : null;
+  const expectedReturnDate = primaryLine ? primaryLine.dueDate : record.issueDate;
+
+  let studentData = record.student;
+  if (studentData && typeof studentData === 'object') {
+    studentData = {
+      ...studentData,
+      id: studentData._id ? studentData._id.toString() : studentData.id,
+      name: studentData.fullName || studentData.name || 'Student',
+      fullName: studentData.fullName || studentData.name || 'Student',
+      studentId: studentData.enrolmentNumber || studentData.studentId || '',
+      enrolmentNumber: studentData.enrolmentNumber || studentData.studentId || '',
+      department: studentData.programme || studentData.department || 'General',
+      programme: studentData.programme || studentData.department || 'General',
+    };
+  }
+
   return {
     ...record,
     id: record._id.toString(),
     issueNumber: record.issueNumber || `ISS-${record._id.toString().slice(-6).toUpperCase()}`,
-    studentId: record.student,
+    student: studentData,
+    studentId: studentData,
+    expectedReturnDate,
+    dueDate: expectedReturnDate,
     lines,
   };
 }

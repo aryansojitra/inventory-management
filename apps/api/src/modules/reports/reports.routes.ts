@@ -76,12 +76,30 @@ router.get(
       })
       .lean();
 
-    const normalizedRecent = recentRecords.map((r: any) => ({
-      ...r,
-      id: r._id.toString(),
-      issueNumber: r.issueNumber || `ISS-${r._id.toString().slice(-6).toUpperCase()}`,
-      studentId: r.student,
-    }));
+    const normalizedRecent = recentRecords.map((r: any) => {
+      const primaryLine = Array.isArray(r.lines) && r.lines.length > 0 ? r.lines[0] : null;
+      const expectedReturnDate = primaryLine ? primaryLine.dueDate : r.issueDate;
+      const studentData = r.student ? {
+        ...r.student,
+        id: r.student._id ? r.student._id.toString() : r.student.id,
+        name: r.student.fullName || r.student.name || 'Student',
+        fullName: r.student.fullName || r.student.name || 'Student',
+        studentId: r.student.enrolmentNumber || r.student.studentId || '',
+        enrolmentNumber: r.student.enrolmentNumber || r.student.studentId || '',
+        department: r.student.programme || r.student.department || 'General',
+        programme: r.student.programme || r.student.department || 'General',
+      } : null;
+
+      return {
+        ...r,
+        id: r._id.toString(),
+        issueNumber: r.issueNumber || `ISS-${r._id.toString().slice(-6).toUpperCase()}`,
+        student: studentData,
+        studentId: studentData,
+        expectedReturnDate,
+        dueDate: expectedReturnDate,
+      };
+    });
 
     const summary = {
       totalItems,

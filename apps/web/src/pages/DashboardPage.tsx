@@ -234,8 +234,17 @@ export const DashboardPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {overdueIssues.slice(0, 5).map((issue) => {
-                      const studentObj = typeof issue.studentId === 'object' ? issue.studentId : null;
-                      const days = calculateOverdueDays(issue.expectedReturnDate);
+                      const studentObj =
+                        (typeof issue.studentId === 'object' ? issue.studentId : null) ||
+                        (typeof (issue as any).student === 'object' ? (issue as any).student : null);
+                      const studentName = studentObj?.name || (studentObj as any)?.fullName || 'Student';
+                      const studentCode = studentObj?.studentId || (studentObj as any)?.enrolmentNumber || '';
+                      const studentDept = studentObj?.department || (studentObj as any)?.programme || '';
+                      const dueDate =
+                        issue.expectedReturnDate ||
+                        (issue as any).dueDate ||
+                        (issue.lines && (issue.lines[0] as any)?.dueDate);
+                      const days = calculateOverdueDays(dueDate);
                       return (
                         <tr key={issue._id}>
                           <td className="font-semibold text-blue-600">
@@ -243,14 +252,14 @@ export const DashboardPage: React.FC = () => {
                           </td>
                           <td>
                             <div className="font-medium text-foreground">
-                              {studentObj?.name || 'Student'}
+                              {studentName}
                             </div>
                             <div className="text-[11px] text-muted-foreground">
-                              {studentObj?.studentId} • {studentObj?.department}
+                              {studentCode ? `${studentCode} • ` : ''}{studentDept}
                             </div>
                           </td>
                           <td className="text-xs text-muted-foreground">
-                            {formatDate(issue.expectedReturnDate)}
+                            {formatDate(dueDate)}
                           </td>
                           <td>
                             <Badge variant="overdue">
