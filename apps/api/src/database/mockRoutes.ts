@@ -23,13 +23,25 @@ mockRouter.use((req: any, _res: Response, next) => {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 mockRouter.post('/auth/login', (req: Request, res: Response) => {
   const { email } = req.body;
-  const result = mockStore.login(email || 'coordinator@department.edu');
-  res.json({ success: true, data: result });
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email or Student ID is required' });
+  }
+  try {
+    const result = mockStore.login(email);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(401).json({ success: false, message: err.message || 'Invalid credentials' });
+  }
 });
 
 mockRouter.get('/auth/me', (req: any, res: Response) => {
-  const userId = req.user?.id || 'usr_coord_1';
-  const user = mockData.users.find((u) => u._id === userId) || mockData.users[0];
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ success: false, message: 'Unauthorized: Session missing or expired' });
+  }
+  const user = mockStore.getUserById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, message: 'Unauthorized: User session not found' });
+  }
   res.json({ success: true, data: user });
 });
 
@@ -131,15 +143,20 @@ mockRouter.get('/issues', (_req: Request, res: Response) => {
   });
 });
 
-mockRouter.get('/issues/my', (_req: any, res: Response) => {
-  // Returns student's active and past issues
-  const myIssues = mockData.issues.map((iss) => {
-    const studentObj =
-      typeof iss.studentId === 'object'
-        ? iss.studentId
-        : mockData.students.find((s) => s._id === iss.studentId);
-    return { ...iss, studentId: studentObj };
-  });
+mockRouter.get('/issues/my', (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const user = userId ? mockStore.getUserById(userId) : null;
+  const studentId = user ? user._id : userId;
+
+  const myIssues = mockData.issues
+    .filter((iss) => !studentId || iss.studentId === studentId)
+    .map((iss) => {
+      const studentObj =
+        typeof iss.studentId === 'object'
+          ? iss.studentId
+          : mockData.students.find((s) => s._id === iss.studentId) || user;
+      return { ...iss, studentId: studentObj };
+    });
   res.json({ success: true, data: myIssues });
 });
 
@@ -205,7 +222,7 @@ mockRouter.get('/renewals', (req: Request, res: Response) => {
 
 mockRouter.post('/renewals/request', (req: any, res: Response) => {
   try {
-    const ren = mockStore.requestRenewal(req.body, req.user?.id || 'usr_student_1');
+    const ren = mockStore.requestRenewal(req.body, req.user?.id || 'stu_1');
     res.status(201).json({ success: true, data: ren });
   } catch (err: any) {
     res.status(400).json({ success: false, message: err.message });

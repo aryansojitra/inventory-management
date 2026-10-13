@@ -21,7 +21,17 @@ import { StudentPortalPage } from './pages/StudentPortalPage';
 import { StudentCatalogPage } from './pages/StudentCatalogPage';
 
 const RootRedirect: React.FC = () => {
-  const { isAuthenticated, isStudent } = useAuth();
+  const { isAuthenticated, isStudent, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-muted-foreground">Authenticating session...</p>
+        </div>
+      </div>
+    );
+  }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (isStudent) return <Navigate to="/student/portal" replace />;
   return <Navigate to="/dashboard" replace />;
@@ -56,7 +66,7 @@ export const App: React.FC = () => {
             </Route>
 
             {/* Student Portal & Catalog */}
-            <Route element={<RoleGuard />}>
+            <Route element={<RoleGuard allowedRoles={['student']} />}>
               <Route element={<AppLayout />}>
                 <Route path="/student/portal" element={<StudentPortalPage />} />
                 <Route path="/student/catalog" element={<StudentCatalogPage />} />

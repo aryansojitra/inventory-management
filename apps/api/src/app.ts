@@ -53,15 +53,10 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Fallback Middleware: If running in in-memory mode, route to mockRouter
-app.use((req, res, next) => {
-  if (isMemoryMode && req.url.startsWith('/api/v1')) {
-    const originalUrl = req.url;
-    req.url = req.url.replace('/api/v1', '');
-    return mockRouter(req, res, (err) => {
-      req.url = originalUrl;
-      next(err);
-    });
+// If running in in-memory mode, route to mockRouter under /api/v1
+app.use('/api/v1', (req, res, next) => {
+  if (isMemoryMode) {
+    return mockRouter(req, res, next);
   }
   next();
 });

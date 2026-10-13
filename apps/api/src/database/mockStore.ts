@@ -13,8 +13,8 @@ export const mockData: Record<string, any[]> = {
       department: 'Computer Engineering',
     },
     {
-      _id: 'usr_student_1',
-      id: 'usr_student_1',
+      _id: 'stu_1',
+      id: 'stu_1',
       name: 'Jane Doe',
       email: 'student1@department.edu',
       role: 'student',
@@ -22,8 +22,8 @@ export const mockData: Record<string, any[]> = {
       department: 'Computer Engineering',
     },
     {
-      _id: 'usr_student_2',
-      id: 'usr_student_2',
+      _id: 'stu_2',
+      id: 'stu_2',
       name: 'Alex Johnson',
       email: 'alex@department.edu',
       role: 'student',
@@ -31,8 +31,8 @@ export const mockData: Record<string, any[]> = {
       department: 'Computer Engineering',
     },
     {
-      _id: 'usr_student_3',
-      id: 'usr_student_3',
+      _id: 'stu_3',
+      id: 'stu_3',
       name: 'Priya Sharma',
       email: 'priya@department.edu',
       role: 'student',
@@ -40,8 +40,8 @@ export const mockData: Record<string, any[]> = {
       department: 'Electronics & Comm',
     },
     {
-      _id: 'usr_student_4',
-      id: 'usr_student_4',
+      _id: 'stu_4',
+      id: 'stu_4',
       name: 'Carlos Mendez',
       email: 'carlos@department.edu',
       role: 'student',
@@ -324,7 +324,7 @@ export const mockData: Record<string, any[]> = {
       issueId: 'iss_1',
       lineId: 'line_1_1',
       studentId: 'stu_1',
-      requestedBy: 'usr_student_1',
+      requestedBy: 'stu_1',
       currentDueDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
       proposedDueDate: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString(),
       daysRequested: 15,
@@ -428,14 +428,56 @@ export const mockData: Record<string, any[]> = {
 // ── Mock Controller Helpers ──────────────────────────────────────────────────
 export const mockStore = {
   // Auth
+  getUserById(id: string) {
+    if (!id) return null;
+    const user = mockData.users.find((u) => u._id === id || u.id === id);
+    if (user) return user;
+
+    const student = mockData.students.find(
+      (s) =>
+        s._id === id ||
+        (s.studentId && s.studentId.toLowerCase() === id.toLowerCase()) ||
+        (s.email && s.email.toLowerCase() === id.toLowerCase())
+    );
+    if (student) {
+      return {
+        _id: student._id,
+        id: student._id,
+        name: student.name,
+        email: student.email,
+        role: 'student',
+        studentId: student.studentId,
+        department: student.department,
+      };
+    }
+
+    if (id.startsWith('usr_student_')) {
+      const mappedId = id.replace('usr_student_', 'stu_');
+      const mapped = mockData.users.find((u) => u._id === mappedId);
+      if (mapped) return mapped;
+    }
+
+    return null;
+  },
+
   login(emailOrId: string) {
     const q = (emailOrId || '').toLowerCase().trim();
+    if (!q) {
+      throw new Error('Please enter your email or Student Roll No');
+    }
+
     let user = mockData.users.find(
-      (u) => u.email.toLowerCase() === q || (u.studentId && u.studentId.toLowerCase() === q)
+      (u) =>
+        u.email.toLowerCase() === q ||
+        (u.studentId && u.studentId.toLowerCase() === q) ||
+        u._id.toLowerCase() === q
     );
     if (!user) {
       const student = mockData.students.find(
-        (s) => s.email.toLowerCase() === q || s.studentId.toLowerCase() === q
+        (s) =>
+          s.email.toLowerCase() === q ||
+          (s.studentId && s.studentId.toLowerCase() === q) ||
+          s._id.toLowerCase() === q
       );
       if (student) {
         user = {
@@ -449,8 +491,12 @@ export const mockStore = {
         };
       }
     }
+    if (!user && q.startsWith('usr_student_')) {
+      const mappedId = q.replace('usr_student_', 'stu_');
+      user = mockData.users.find((u) => u._id === mappedId);
+    }
     if (!user) {
-      user = mockData.users[0]; // Fallback to coordinator
+      throw new Error('Invalid email or Student Roll No. User not found.');
     }
 
     const token = jwt.sign(
@@ -690,7 +736,7 @@ export const mockStore = {
   },
 
   // Renewals
-  requestRenewal(payload: any, userId = 'usr_student_1') {
+  requestRenewal(payload: any, userId = 'stu_1') {
     const issue = mockData.issues.find((i) => i._id === payload.issueId);
     if (!issue) throw new Error('Issue not found');
 
