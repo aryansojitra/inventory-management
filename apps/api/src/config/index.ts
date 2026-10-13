@@ -6,7 +6,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '5000', 10),
-  mongoUri: process.env.MONGODB_URI || 'mongodb://aryanpatel0344h:aryanpatel0344h@ac-eob2gec-shard-00-00.q0lhgxc.mongodb.net:27017,ac-eob2gec-shard-00-01.q0lhgxc.mongodb.net:27017,ac-eob2gec-shard-00-02.q0lhgxc.mongodb.net:27017/cosmetics_store?ssl=true&replicaSet=atlas-pq09qm-shard-0&authSource=admin&appName=agriather',
+  mongoUri: process.env.MONGODB_URI || 'enter mongodb url',
   jwtSecret: process.env.JWT_SECRET || 'dev_secret_change_in_production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
