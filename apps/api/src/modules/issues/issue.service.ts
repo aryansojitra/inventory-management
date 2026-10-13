@@ -315,7 +315,7 @@ export class IssueService {
     return records;
   }
 
-  async getOverdueLines(now?: Date) {
+  async getOverdueLines(now?: Date): Promise<any[]> {
     const today = now || new Date();
     today.setHours(0, 0, 0, 0);
 

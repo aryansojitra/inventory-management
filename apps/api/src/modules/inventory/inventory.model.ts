@@ -7,7 +7,7 @@ export interface IInventoryItem extends Document {
   category: string;
   description: string;
   make: string;
-  model: string;
+  modelNumber: string;
   trackingMode: 'individual' | 'quantity';
   // Quantity-based fields
   totalStock: number;
@@ -47,7 +47,7 @@ const InventoryItemSchema = new Schema<IInventoryItem>(
     category: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
     make: { type: String, default: '' },
-    model: { type: String, default: '' },
+    modelNumber: { type: String, default: '' },
     trackingMode: {
       type: String,
       enum: Object.values(TRACKING_MODES),
