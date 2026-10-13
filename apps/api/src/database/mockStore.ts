@@ -22,6 +22,33 @@ export const mockData: Record<string, any[]> = {
       department: 'Computer Engineering',
     },
     {
+      _id: 'usr_student_2',
+      id: 'usr_student_2',
+      name: 'Alex Johnson',
+      email: 'alex@department.edu',
+      role: 'student',
+      studentId: 'CS-2024-015',
+      department: 'Computer Engineering',
+    },
+    {
+      _id: 'usr_student_3',
+      id: 'usr_student_3',
+      name: 'Priya Sharma',
+      email: 'priya@department.edu',
+      role: 'student',
+      studentId: 'EC-2024-009',
+      department: 'Electronics & Comm',
+    },
+    {
+      _id: 'usr_student_4',
+      id: 'usr_student_4',
+      name: 'Carlos Mendez',
+      email: 'carlos@department.edu',
+      role: 'student',
+      studentId: 'ME-2024-032',
+      department: 'Mechanical',
+    },
+    {
       _id: 'usr_admin_1',
       id: 'usr_admin_1',
       name: 'Prof. Sarah Jenkins',
@@ -401,10 +428,30 @@ export const mockData: Record<string, any[]> = {
 // ── Mock Controller Helpers ──────────────────────────────────────────────────
 export const mockStore = {
   // Auth
-  login(email: string) {
-    const user =
-      mockData.users.find((u) => u.email.toLowerCase() === email.toLowerCase()) ||
-      mockData.users[0]; // Fallback to coordinator
+  login(emailOrId: string) {
+    const q = (emailOrId || '').toLowerCase().trim();
+    let user = mockData.users.find(
+      (u) => u.email.toLowerCase() === q || (u.studentId && u.studentId.toLowerCase() === q)
+    );
+    if (!user) {
+      const student = mockData.students.find(
+        (s) => s.email.toLowerCase() === q || s.studentId.toLowerCase() === q
+      );
+      if (student) {
+        user = {
+          _id: student._id,
+          id: student._id,
+          name: student.name,
+          email: student.email,
+          role: 'student',
+          studentId: student.studentId,
+          department: student.department,
+        };
+      }
+    }
+    if (!user) {
+      user = mockData.users[0]; // Fallback to coordinator
+    }
 
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email },
