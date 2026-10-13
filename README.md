@@ -22,27 +22,30 @@ Academic departments manage expensive lab equipment (Arduino boards, Raspberry P
 **DIMS eliminates this completely** by providing:
 1. **A Coordinator Operations Workbench**: Real-time stock counts across multiple condition buckets, a guided issue cart with quota protection, physical condition return inspections, and renewal approvals.
 2. **A Student Self-Service Portal**: Transparent view of currently borrowed items with live countdowns to return due dates, remaining renewal counts, and 1-click renewal requests.
-3. **Atomic Stock Integrity & Zero-Failure Demo Mode**: Works immediately **out-of-the-box with zero database configuration** via an intelligent in-memory fallback engine pre-loaded with realistic demo data, while also fully supporting MongoDB Atlas or local MongoDB instances.
+3. **Enterprise MongoDB Architecture**: Built with **Mongoose ODM on MongoDB Atlas**, supporting schemas, indexes, atomic stock transactions, aggregation pipelines, and comprehensive validation.
 
 ---
 
-## ⚡ How to Run the Project (Evaluator Quickstart)
-
-Running the entire project requires only **one command**:
+## ⚡ How to Run the Project
 
 ```bash
-# 1. Install dependencies (if not already installed)
+# 1. Install dependencies
 npm install
 
-# 2. Start both Frontend and Backend concurrently
+# 2. Configure MongoDB Atlas in .env (or apps/api/.env)
+# Set MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.abcde.mongodb.net/?retryWrites=true&w=majority
+# Set MONGODB_DB_NAME=dept_inventory
+
+# 3. Seed real test data into MongoDB
+npm run seed
+
+# 4. Start both Frontend and Backend concurrently
 npm run dev
 ```
 
 * 🌐 **Frontend Web App**: [http://localhost:5173/](http://localhost:5173/)
 * 🔌 **Backend API**: [http://localhost:5000/api/v1](http://localhost:5000/api/v1)
 * 💓 **API Health Status**: [http://localhost:5000/health](http://localhost:5000/health)
-
-> **💡 Zero Database Setup Needed**: You do **not** need a local MongoDB or external cloud cluster running to evaluate this project. The API automatically detects connection status and activates its built-in in-memory data store with pre-seeded test data!
 
 ---
 
@@ -118,10 +121,10 @@ Follow these simple steps in your browser to evaluate each required feature:
 
 | Mandatory Business Rule | Implementation Location | Verified Status |
 |---|---|---|
-| **Max Borrow Limit (5 items per student)** | `issue.service.ts` & `mockStore.ts` validate `currentBorrowed + qty <= maxLimit` | ✅ Verified |
+| **Max Borrow Limit (5 items per student)** | `issue.service.ts` validates `currentBorrowed + qty <= maxLimit` via Mongoose | ✅ Verified |
 | **Default 15-Day Loan Period** | `dateUtils.ts` via `addCalendarDays(today, 15)` | ✅ Verified |
 | **Weekend Return Date Alert** | `IssueItemsPage.tsx` live day-of-week detector | ✅ Verified |
-| **Max 3 Renewals Ceiling** | `renewal.service.ts` & `mockStore.ts` (`renewalCount < 3`) | ✅ Verified |
+| **Max 3 Renewals Ceiling** | `renewal.service.ts` (`renewalCount < 3`) via Mongoose atomic update | ✅ Verified |
 | **Overdue Items Block New Loans** | Student eligibility check in `IssueItemsPage.tsx` | ✅ Verified |
 | **Dual Tracking Modes** | Serialized barcodes (`AST-...`) vs. bulk quantity counters | ✅ Verified |
 | **Condition-Based Stock Routing** | `return.service.ts` routes damaged/lost units away from available stock | ✅ Verified |

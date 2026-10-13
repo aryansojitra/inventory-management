@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "seed": "ts-node scripts/seed.ts",
+    "check:db": "ts-node scripts/check-db.ts",
     "reset": "ts-node scripts/reset-demo-data.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"

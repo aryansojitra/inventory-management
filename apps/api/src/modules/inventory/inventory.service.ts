@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { InventoryItem, IInventoryItem } from './inventory.model';
 import { IndividualAsset } from '../assets/asset.model';
 import { StockTransaction } from '../stock-adjustments/stockTransaction.model';
@@ -6,21 +7,24 @@ import { createError } from '../../utils/apiUtils';
 import { AUDIT_ACTIONS, STOCK_TRANSACTION_TYPES, TRACKING_MODES } from '../../constants';
 
 export interface CreateInventoryDto {
-  itemCode: string;
+  itemCode?: string;
+  sku?: string;
   name: string;
   category: string;
   description?: string;
   make?: string;
   model?: string;
   trackingMode: 'individual' | 'quantity';
-  locationId: string;
+  locationId?: string;
+  location?: string;
   initialQty?: number;
+  totalQuantity?: number;
   policy?: { maxRenewals?: number; borrowingDays?: number };
 }
 
 export interface StockAdditionDto {
   quantity: number;
-  reason: string;
+  reason?: string;
 }
 
 export interface StockAdjustmentDto {
@@ -28,6 +32,24 @@ export interface StockAdjustmentDto {
   quantity: number;
   reason: string;
   transactionType: string;
+}
+
+function normalizeItem(item: any) {
+  const isQty = item.trackingMode === TRACKING_MODES.QUANTITY;
+  return {
+    ...item,
+    id: item._id.toString(),
+    sku: item.itemCode,
+    totalQuantity: isQty ? item.totalStock : (item.totalAssets || 0),
+    availableQuantity: isQty ? item.availableQty : (item.availableAssets || 0),
+    issuedQuantity: item.issuedQty || 0,
+    damagedQuantity: item.damagedQty || 0,
+    lostQuantity: item.lostQty || 0,
+    maintenanceQuantity: item.maintenanceQty || 0,
+    lowStockThreshold: 5,
+    locationId: item.location,
+    isActive: !item.isRetired,
+  };
 }
 
 export class InventoryService {
@@ -39,7 +61,8 @@ export class InventoryService {
     category?: string;
     trackingMode?: string;
     isRetired?: string;
-  }) {
+    lowStock?: boolean;
+  }): Promise<{ items: any[]; total: number }> {
     const filter: any = {};
     if (query.search) {
       filter.$or = [
@@ -48,71 +71,93 @@ export class InventoryService {
         { category: { $regex: query.search, $options: 'i' } },
       ];
     }
-    if (query.category) filter.category = query.category;
-    if (query.trackingMode) filter.trackingMode = query.trackingMode;
-    filter.isRetired = query.isRetired === 'true' ? true : false;
+    if (query.category && query.category !== 'all') {
+      filter.category = query.category;
+    }
+    if (query.trackingMode && query.trackingMode !== 'all') {
+      filter.trackingMode = query.trackingMode;
+    }
+    if (query.isRetired !== undefined) {
+      filter.isRetired = query.isRetired === 'true';
+    } else {
+      filter.isRetired = false;
+    }
+
+    if (query.lowStock) {
+      filter.trackingMode = TRACKING_MODES.QUANTITY;
+      filter.availableQty = { $lte: 5 };
+    }
 
     const [items, total] = await Promise.all([
       InventoryItem.find(filter)
         .sort({ createdAt: -1 })
         .skip(query.skip)
         .limit(query.limit)
-        .populate('location', 'locationCode room department')
+        .populate('location', 'locationCode room department cupboard building')
         .lean(),
       InventoryItem.countDocuments(filter),
     ]);
 
-    return { items, total };
+    return { items: items.map(normalizeItem), total };
   }
 
-  async getById(id: string) {
+  async getById(id: string): Promise<any> {
     const item = await InventoryItem.findById(id)
-      .populate('location', 'locationCode room department cupboard')
+      .populate('location', 'locationCode room department cupboard building')
       .populate('createdBy', 'fullName')
       .lean();
     if (!item) throw createError('Inventory item not found', 404);
-    return item;
+    return normalizeItem(item);
   }
 
   async create(dto: CreateInventoryDto, actorId: string, actorRole: string) {
-    const existing = await InventoryItem.findOne({
-      itemCode: dto.itemCode.toUpperCase(),
-    });
-    if (existing) throw createError('Item code already exists', 409);
+    const itemCode = (dto.itemCode || dto.sku || '').toUpperCase().trim();
+    if (!itemCode) throw createError('Item Code / SKU is required', 400);
+
+    const existing = await InventoryItem.findOne({ itemCode });
+    if (existing) throw createError(`Item code ${itemCode} already exists`, 409);
+
+    const locationId = dto.locationId || dto.location;
+    if (!locationId) throw createError('Storage location is required', 400);
+
+    const initialQty = Number(dto.initialQty || dto.totalQuantity) || 0;
 
     const itemData: any = {
-      itemCode: dto.itemCode.toUpperCase(),
+      itemCode,
       name: dto.name,
       category: dto.category,
       description: dto.description || '',
       make: dto.make || '',
       model: dto.model || '',
       trackingMode: dto.trackingMode,
-      location: dto.locationId,
+      location: locationId,
       createdBy: actorId,
+      totalStock: dto.trackingMode === TRACKING_MODES.QUANTITY ? initialQty : 0,
+      availableQty: dto.trackingMode === TRACKING_MODES.QUANTITY ? initialQty : 0,
+      totalAssets: 0,
+      availableAssets: 0,
+      issuedQty: 0,
+      damagedQty: 0,
+      lostQty: 0,
+      maintenanceQty: 0,
       policy: {
         maxRenewals: dto.policy?.maxRenewals ?? 3,
         borrowingDays: dto.policy?.borrowingDays ?? 15,
       },
+      isRetired: false,
     };
-
-    if (dto.trackingMode === TRACKING_MODES.QUANTITY && dto.initialQty) {
-      itemData.totalStock = dto.initialQty;
-      itemData.availableQty = dto.initialQty;
-    }
 
     const item = await InventoryItem.create(itemData);
 
-    // Record stock transaction for initial addition
-    if (dto.trackingMode === TRACKING_MODES.QUANTITY && dto.initialQty) {
+    if (dto.trackingMode === TRACKING_MODES.QUANTITY && initialQty > 0) {
       await StockTransaction.create({
         inventoryItem: item._id,
         transactionType: STOCK_TRANSACTION_TYPES.ADDITION,
-        quantityChange: dto.initialQty,
+        quantityChange: initialQty,
         fieldAffected: 'availableQty',
         previousValue: 0,
-        newValue: dto.initialQty,
-        reason: 'Initial stock addition',
+        newValue: initialQty,
+        reason: 'Initial stock intake',
         performedBy: actorId,
       });
     }
@@ -124,10 +169,43 @@ export class InventoryService {
       entityType: 'InventoryItem',
       entityId: item._id,
       newValue: itemData,
-      remarks: 'Inventory item created',
+      remarks: 'Inventory item registered',
     });
 
-    return item;
+    return normalizeItem(item.toObject());
+  }
+
+  async update(itemId: string, updates: Partial<CreateInventoryDto>, actorId: string, actorRole: string) {
+    const item = await InventoryItem.findById(itemId);
+    if (!item) throw createError('Item not found', 404);
+
+    const prev = item.toObject();
+    if (updates.name) item.name = updates.name.trim();
+    if (updates.category) item.category = updates.category.trim();
+    if (updates.description !== undefined) item.description = updates.description;
+    if (updates.model !== undefined) item.modelNumber = updates.model;
+    if (updates.locationId || updates.location) {
+      item.location = new mongoose.Types.ObjectId(updates.locationId || updates.location);
+    }
+    if (updates.policy) {
+      if (updates.policy.maxRenewals !== undefined) item.policy.maxRenewals = updates.policy.maxRenewals;
+      if (updates.policy.borrowingDays !== undefined) item.policy.borrowingDays = updates.policy.borrowingDays;
+    }
+
+    await item.save();
+
+    await AuditLog.create({
+      action: AUDIT_ACTIONS.ITEM_UPDATED,
+      actor: actorId,
+      actorRole,
+      entityType: 'InventoryItem',
+      entityId: item._id,
+      previousValue: prev,
+      newValue: updates,
+      remarks: 'Inventory item metadata updated',
+    });
+
+    return normalizeItem(item.toObject());
   }
 
   async addStock(
@@ -144,18 +222,21 @@ export class InventoryService {
     if (!item) throw createError('Quantity-based inventory item not found', 404);
 
     const prev = { totalStock: item.totalStock, availableQty: item.availableQty };
-    item.totalStock += dto.quantity;
-    item.availableQty += dto.quantity;
+    const quantity = Number(dto.quantity) || 1;
+    const reason = dto.reason || 'Restock batch received';
+
+    item.totalStock += quantity;
+    item.availableQty += quantity;
     await item.save();
 
     await StockTransaction.create({
       inventoryItem: item._id,
       transactionType: STOCK_TRANSACTION_TYPES.ADDITION,
-      quantityChange: dto.quantity,
+      quantityChange: quantity,
       fieldAffected: 'availableQty',
       previousValue: prev.availableQty,
       newValue: item.availableQty,
-      reason: dto.reason,
+      reason,
       performedBy: actorId,
     });
 
@@ -167,10 +248,10 @@ export class InventoryService {
       entityId: item._id,
       previousValue: prev,
       newValue: { totalStock: item.totalStock, availableQty: item.availableQty },
-      remarks: dto.reason,
+      remarks: reason,
     });
 
-    return item;
+    return normalizeItem(item.toObject());
   }
 
   async adjustStock(
@@ -186,27 +267,32 @@ export class InventoryService {
     });
     if (!item) throw createError('Item not found', 404);
 
-    // Validate that availableQty will not go negative
-    if (dto.field !== 'damagedQty' && dto.field !== 'lostQty' && dto.field !== 'maintenanceQty') {
-      if (item.availableQty < dto.quantity) {
-        throw createError(`Insufficient available quantity. Available: ${item.availableQty}`, 409);
+    const quantity = Number(dto.quantity) || 1;
+
+    // Validate quantities to prevent negative balances
+    const isRestoring =
+      dto.transactionType === STOCK_TRANSACTION_TYPES.MAINTENANCE_END ||
+      dto.transactionType === STOCK_TRANSACTION_TYPES.DAMAGE_CLEARANCE;
+
+    if (isRestoring) {
+      const currentSpecial = (item as any)[dto.field] || 0;
+      if (currentSpecial < quantity) {
+        throw createError(
+          `Cannot restore ${quantity} units: current ${dto.field} is only ${currentSpecial}`,
+          409
+        );
       }
-    }
-
-    const prev: any = {
-      availableQty: item.availableQty,
-      [dto.field]: (item as any)[dto.field],
-    };
-
-    if (dto.transactionType === STOCK_TRANSACTION_TYPES.MAINTENANCE_END ||
-        dto.transactionType === STOCK_TRANSACTION_TYPES.DAMAGE_CLEARANCE) {
-      // Move from special field back to available
-      (item as any)[dto.field] -= dto.quantity;
-      item.availableQty += dto.quantity;
+      (item as any)[dto.field] -= quantity;
+      item.availableQty += quantity;
     } else {
-      // Move from available to special field
-      item.availableQty -= dto.quantity;
-      (item as any)[dto.field] += dto.quantity;
+      if (item.availableQty < quantity) {
+        throw createError(
+          `Insufficient available quantity. Available: ${item.availableQty}, Requested to move: ${quantity}`,
+          409
+        );
+      }
+      item.availableQty -= quantity;
+      (item as any)[dto.field] = ((item as any)[dto.field] || 0) + quantity;
     }
 
     await item.save();
@@ -214,15 +300,14 @@ export class InventoryService {
     await StockTransaction.create({
       inventoryItem: item._id,
       transactionType: dto.transactionType,
-      quantityChange: dto.quantity,
+      quantityChange: quantity,
       fieldAffected: dto.field,
-      previousValue: prev[dto.field],
       newValue: (item as any)[dto.field],
       reason: dto.reason,
       performedBy: actorId,
     });
 
-    return item;
+    return normalizeItem(item.toObject());
   }
 
   async retire(itemId: string, reason: string, actorId: string, actorRole: string) {
@@ -245,11 +330,11 @@ export class InventoryService {
       remarks: reason,
     });
 
-    return item;
+    return normalizeItem(item.toObject());
   }
 
   async getCategories() {
-    return InventoryItem.distinct('category');
+    return InventoryItem.distinct('category', { isRetired: false });
   }
 }
 

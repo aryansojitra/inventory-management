@@ -10,8 +10,16 @@ export const createIssue = asyncHandler(async (req: AuthRequest, res: Response) 
 
 export const getAllIssues = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const { status, studentId } = req.query as any;
-  const { records, total } = await issueService.getAll({ page, limit, skip, status, studentId });
+  const { status, studentId, overdueOnly, search } = req.query as any;
+  const { records, total } = await issueService.getAll({
+    page,
+    limit,
+    skip,
+    status,
+    studentId,
+    overdueOnly,
+    search,
+  });
   sendPaginated(res, records, total, page, limit);
 });
 
@@ -21,15 +29,20 @@ export const getIssueById = asyncHandler(async (req: AuthRequest, res: Response)
 });
 
 export const getMyIssues = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const studentId = req.user!.studentProfileId;
+  let studentId = req.user!.studentProfileId;
+  if (!studentId && req.user!.role === 'student') {
+    // Lookup student by user
+    const student = await (await import('../students/student.model')).Student.findOne({ user: req.user!.userId });
+    if (student) studentId = student._id.toString();
+  }
   if (!studentId) return sendSuccess(res, []);
   const records = await issueService.getStudentIssues(studentId);
   sendSuccess(res, records);
 });
 
 export const getOverdueItems = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const lines = await issueService.getOverdueLines();
-  sendSuccess(res, lines);
+  const records = await issueService.getOverdueIssues();
+  sendSuccess(res, records);
 });
 
 export const getDashboardStats = asyncHandler(async (req: AuthRequest, res: Response) => {

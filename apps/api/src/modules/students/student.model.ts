@@ -68,7 +68,6 @@ const StudentSchema = new Schema<IStudent>(
   { timestamps: true }
 );
 
-StudentSchema.index({ enrolmentNumber: 1 }, { unique: true });
 StudentSchema.index({ programme: 1 });
 StudentSchema.index({ user: 1 });
 

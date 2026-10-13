@@ -67,7 +67,6 @@ const IndividualAssetSchema = new Schema<IIndividualAsset>(
   { timestamps: true }
 );
 
-IndividualAssetSchema.index({ assetId: 1 }, { unique: true });
 IndividualAssetSchema.index({ inventoryItem: 1 });
 IndividualAssetSchema.index({ status: 1 });
 IndividualAssetSchema.index({ condition: 1 });

@@ -5,8 +5,17 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 
 export const getAllInventory = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const { search, category, trackingMode, isRetired } = req.query as any;
-  const { items, total } = await inventoryService.getAll({ page, limit, skip, search, category, trackingMode, isRetired });
+  const { search, category, trackingMode, isRetired, lowStock } = req.query as any;
+  const { items, total } = await inventoryService.getAll({
+    page,
+    limit,
+    skip,
+    search,
+    category,
+    trackingMode,
+    isRetired,
+    lowStock: lowStock === 'true',
+  });
   sendPaginated(res, items, total, page, limit);
 });
 
@@ -17,7 +26,12 @@ export const getInventoryById = asyncHandler(async (req: AuthRequest, res: Respo
 
 export const createInventoryItem = asyncHandler(async (req: AuthRequest, res: Response) => {
   const item = await inventoryService.create(req.body, req.user!.userId, req.user!.role);
-  sendSuccess(res, item, 'Inventory item created', 201);
+  sendSuccess(res, item, 'Inventory item created successfully', 201);
+});
+
+export const updateInventoryItem = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const item = await inventoryService.update(req.params.id, req.body, req.user!.userId, req.user!.role);
+  sendSuccess(res, item, 'Inventory item updated successfully');
 });
 
 export const addStock = asyncHandler(async (req: AuthRequest, res: Response) => {

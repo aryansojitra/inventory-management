@@ -5,12 +5,27 @@ import { AuthRequest } from '../../middleware/auth.middleware';
 
 export const getAllStudents = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const { search, programme, isActive } = req.query as any;
-  const { students, total } = await studentService.getAll({ page, limit, skip, search, programme, isActive });
+  const { search, programme, department, isActive } = req.query as any;
+  const { students, total } = await studentService.getAll({
+    page,
+    limit,
+    skip,
+    search,
+    programme,
+    department,
+    isActive,
+  });
   sendPaginated(res, students, total, page, limit);
 });
 
 export const getStudentById = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (req.user?.role === 'student') {
+    const student = await studentService.getById(req.params.id);
+    if (student._id.toString() !== req.user.studentProfileId) {
+      return res.status(403).json({ success: false, message: 'Access denied: You can only view your own profile.' });
+    }
+    return sendSuccess(res, student);
+  }
   const student = await studentService.getById(req.params.id);
   sendSuccess(res, student);
 });

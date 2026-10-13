@@ -78,7 +78,6 @@ const InventoryItemSchema = new Schema<IInventoryItem>(
   { timestamps: true }
 );
 
-InventoryItemSchema.index({ itemCode: 1 }, { unique: true });
 InventoryItemSchema.index({ trackingMode: 1 });
 InventoryItemSchema.index({ category: 1 });
 InventoryItemSchema.index({ isRetired: 1 });

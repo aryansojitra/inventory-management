@@ -4,69 +4,131 @@ import { AuditLog } from '../audit-logs/auditLog.model';
 import { createError } from '../../utils/apiUtils';
 import { AUDIT_ACTIONS, ASSET_CONDITIONS, ASSET_STATUSES } from '../../constants';
 
+function normalizeAsset(asset: any) {
+  return {
+    ...asset,
+    id: asset._id.toString(),
+    assetTag: asset.assetId,
+    itemId: asset.inventoryItem,
+  };
+}
+
 export class AssetService {
   async getAll(query: {
-    page: number; limit: number; skip: number;
-    inventoryItemId?: string; status?: string; condition?: string;
-  }) {
+    page: number;
+    limit: number;
+    skip: number;
+    inventoryItemId?: string;
+    itemId?: string;
+    status?: string;
+    condition?: string;
+    search?: string;
+  }): Promise<{ assets: any[]; total: number }> {
     const filter: any = {};
-    if (query.inventoryItemId) filter.inventoryItem = query.inventoryItemId;
-    if (query.status) filter.status = query.status;
-    if (query.condition) filter.condition = query.condition;
+    const parentId = query.inventoryItemId || query.itemId;
+    if (parentId && parentId !== 'all') {
+      filter.inventoryItem = parentId;
+    }
+    if (query.status && query.status !== 'all') {
+      filter.status = query.status;
+    }
+    if (query.condition && query.condition !== 'all') {
+      filter.condition = query.condition;
+    }
+    if (query.search) {
+      const q = query.search;
+      filter.$or = [
+        { assetId: { $regex: q, $options: 'i' } },
+        { serialNumber: { $regex: q, $options: 'i' } },
+      ];
+    }
 
     const [assets, total] = await Promise.all([
       IndividualAsset.find(filter)
         .sort({ assetId: 1 })
         .skip(query.skip)
         .limit(query.limit)
-        .populate('inventoryItem', 'name itemCode')
-        .populate('location', 'locationCode room')
+        .populate('inventoryItem', 'name itemCode category')
+        .populate('location', 'locationCode room building')
         .populate('addedBy', 'fullName')
         .lean(),
       IndividualAsset.countDocuments(filter),
     ]);
 
-    return { assets, total };
+    return { assets: assets.map(normalizeAsset), total };
   }
 
-  async getById(id: string) {
+  async getById(id: string): Promise<any> {
     const asset = await IndividualAsset.findById(id)
-      .populate('inventoryItem', 'name itemCode category')
-      .populate('location', 'locationCode room department')
+      .populate('inventoryItem', 'name itemCode category policy')
+      .populate('location', 'locationCode room department building')
       .populate('addedBy', 'fullName')
       .lean();
     if (!asset) throw createError('Asset not found', 404);
-    return asset;
+    return normalizeAsset(asset);
   }
 
-  async create(dto: {
-    assetId: string;
-    serialNumber?: string;
-    inventoryItemId: string;
-    locationId: string;
-    condition?: string;
-    notes?: string;
-  }, actorId: string, actorRole: string) {
-    const existing = await IndividualAsset.findOne({ assetId: dto.assetId.toUpperCase() });
-    if (existing) throw createError('Asset ID already exists', 409);
+  async create(
+    dto: {
+      assetId?: string;
+      assetTag?: string;
+      serialNumber?: string;
+      inventoryItemId?: string;
+      itemId?: string;
+      locationId?: string;
+      condition?: string;
+      notes?: string;
+    },
+    actorId: string,
+    actorRole: string
+  ) {
+    const assetId = (dto.assetId || dto.assetTag || '').toUpperCase().trim();
+    if (!assetId) throw createError('Asset ID / Asset Tag is required', 400);
 
-    const item = await InventoryItem.findOne({ _id: dto.inventoryItemId, trackingMode: 'individual', isRetired: false });
-    if (!item) throw createError('Individual-mode inventory item not found', 404);
+    const existing = await IndividualAsset.findOne({ assetId });
+    if (existing) throw createError(`Asset ID ${assetId} already exists`, 409);
+
+    const inventoryItemId = dto.inventoryItemId || dto.itemId;
+    if (!inventoryItemId) throw createError('Parent inventory item is required', 400);
+
+    const item = await InventoryItem.findOne({
+      _id: inventoryItemId,
+      trackingMode: 'individual',
+      isRetired: false,
+    });
+    if (!item) throw createError('Individual-mode inventory item not found or is retired', 404);
+
+    const locationId = dto.locationId || item.location;
+
+    const condition = dto.condition || ASSET_CONDITIONS.GOOD;
+    const isGood = condition === ASSET_CONDITIONS.GOOD;
+    const status = isGood ? ASSET_STATUSES.AVAILABLE : ASSET_STATUSES.MAINTENANCE;
 
     const asset = await IndividualAsset.create({
-      assetId: dto.assetId.toUpperCase(),
+      assetId,
       serialNumber: dto.serialNumber || '',
-      inventoryItem: dto.inventoryItemId,
-      location: dto.locationId,
-      condition: dto.condition || ASSET_CONDITIONS.GOOD,
-      status: ASSET_STATUSES.AVAILABLE,
+      inventoryItem: item._id,
+      location: locationId,
+      condition,
+      status,
       addedBy: actorId,
       notes: dto.notes || '',
+      conditionHistory: [
+        {
+          condition,
+          changedBy: actorId,
+          changedAt: new Date(),
+          reason: 'Initial asset registration',
+        },
+      ],
     });
 
-    // Update parent item's asset counts
-    await InventoryItem.findByIdAndUpdate(dto.inventoryItemId, {
-      $inc: { totalAssets: 1, availableAssets: 1 },
+    // Update parent item counts
+    await InventoryItem.findByIdAndUpdate(item._id, {
+      $inc: {
+        totalAssets: 1,
+        availableAssets: isGood ? 1 : 0,
+      },
     });
 
     await AuditLog.create({
@@ -75,48 +137,51 @@ export class AssetService {
       actorRole,
       entityType: 'IndividualAsset',
       entityId: asset._id,
-      newValue: { assetId: asset.assetId, inventoryItemId: dto.inventoryItemId },
-      remarks: 'Asset registered',
+      newValue: { assetId, inventoryItemId: item._id, condition, status },
+      remarks: 'Individual asset registered',
     });
 
-    return asset;
+    return normalizeAsset(asset.toObject());
   }
 
-  async updateCondition(assetId: string, dto: {
-    condition: string;
-    reason: string;
-  }, actorId: string, actorRole: string) {
+  async updateCondition(
+    assetId: string,
+    dto: { condition: string; reason?: string; notes?: string },
+    actorId: string,
+    actorRole: string
+  ) {
     const asset = await IndividualAsset.findById(assetId);
     if (!asset) throw createError('Asset not found', 404);
 
     const prevCondition = asset.condition;
     const prevStatus = asset.status;
+    const newCondition = dto.condition as any;
 
-    asset.condition = dto.condition as any;
+    asset.condition = newCondition;
 
-    // Derive status from condition
-    if (dto.condition === ASSET_CONDITIONS.GOOD) {
-      if (asset.currentIssue) {
-        asset.status = ASSET_STATUSES.ISSUED;
-      } else {
-        asset.status = ASSET_STATUSES.AVAILABLE;
-      }
-    } else if (dto.condition === ASSET_CONDITIONS.MAINTENANCE) {
+    // Derive status based on condition
+    if (newCondition === ASSET_CONDITIONS.GOOD) {
+      asset.status = asset.currentIssue ? ASSET_STATUSES.ISSUED : ASSET_STATUSES.AVAILABLE;
+    } else if (newCondition === ASSET_CONDITIONS.DAMAGED || newCondition === ASSET_CONDITIONS.MAINTENANCE) {
       asset.status = ASSET_STATUSES.MAINTENANCE;
-    } else if (dto.condition === ASSET_CONDITIONS.RETIRED) {
+    } else if (newCondition === ASSET_CONDITIONS.LOST) {
+      asset.status = 'lost' as any;
+    } else if (newCondition === ASSET_CONDITIONS.RETIRED) {
       asset.status = ASSET_STATUSES.RETIRED;
     }
 
+    const reason = dto.reason || dto.notes || `Condition updated to ${newCondition}`;
+
     asset.conditionHistory.push({
-      condition: dto.condition,
+      condition: newCondition,
       changedBy: actorId as any,
       changedAt: new Date(),
-      reason: dto.reason,
+      reason,
     });
 
     await asset.save();
 
-    // If restoring to available, update parent item counts
+    // Adjust parent inventory item available count
     if (prevStatus !== ASSET_STATUSES.AVAILABLE && asset.status === ASSET_STATUSES.AVAILABLE) {
       await InventoryItem.findByIdAndUpdate(asset.inventoryItem, {
         $inc: { availableAssets: 1 },
@@ -134,11 +199,11 @@ export class AssetService {
       entityType: 'IndividualAsset',
       entityId: asset._id,
       previousValue: { condition: prevCondition, status: prevStatus },
-      newValue: { condition: dto.condition, status: asset.status },
-      remarks: dto.reason,
+      newValue: { condition: newCondition, status: asset.status },
+      remarks: reason,
     });
 
-    return asset;
+    return normalizeAsset(asset.toObject());
   }
 }
 

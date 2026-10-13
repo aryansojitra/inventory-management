@@ -16,8 +16,8 @@ const loginLimiter = rateLimit({
 });
 
 const loginSchema = z.object({
-  email: z.string().email('Valid email required'),
-  password: z.string().min(1, 'Password required'),
+  email: z.string().min(1, 'Email or Student Roll No is required'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 router.post('/login', loginLimiter, validateBody(loginSchema), login);

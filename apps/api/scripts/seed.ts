@@ -1,12 +1,27 @@
 /**
  * Seed Script — Department Inventory Management System
- * Run: npm run seed (from apps/api)
+ * Run: npm run seed (from apps/api or project root)
  * This script is idempotent — safe to run multiple times.
  */
 
 import dotenv from 'dotenv';
 import path from 'path';
-dotenv.config({ path: path.join(__dirname, '../.env') });
+import fs from 'fs';
+
+const envPaths = [
+  process.env.DOTENV_CONFIG_PATH,
+  path.resolve(process.cwd(), '.env'),
+  path.join(__dirname, '../.env'),
+  path.join(__dirname, '../../.env'),
+].filter(Boolean) as string[];
+
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
+dotenv.config();
 
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
@@ -20,77 +35,158 @@ import { IssueRecord, IssueLine } from '../src/modules/issues/issue.model';
 import { ReturnTransaction } from '../src/modules/returns/return.model';
 import { RenewalRequest } from '../src/modules/renewals/renewal.model';
 import { StockTransaction } from '../src/modules/stock-adjustments/stockTransaction.model';
-import { addCalendarDays } from '../src/utils/dateUtils';
+import { calculateDueDate, calculateRenewalDueDate } from '../src/utils/dateUtils';
 
-const HASH_ROUNDS = 12;
+const HASH_ROUNDS = 10;
+const UNIVERSAL_PASSWORD = 'demo1234';
 
 async function seed() {
-  console.log('🌱 Connecting to MongoDB...');
-  await mongoose.connect(config.mongoUri);
-  console.log('✅ Connected');
+  const maskedUri = config.mongoUri.replace(/:([^:@]+)@/, ':****@');
+  console.log('🌱 Connecting to MongoDB at:', maskedUri);
+  await mongoose.connect(config.mongoUri, {
+    dbName: config.mongoDbName || 'dept_inventory',
+  });
+  console.log(`✅ Connected to MongoDB database "${mongoose.connection.name}"`);
 
-  // ── 1. COORDINATOR ──────────────────────────────────────────────────────────
-  let coordinator = await User.findOne({ email: config.seed.coordinatorEmail });
-  if (!coordinator) {
-    coordinator = await User.create({
-      email: config.seed.coordinatorEmail,
-      passwordHash: await bcrypt.hash(config.seed.coordinatorPassword, HASH_ROUNDS),
-      role: 'coordinator',
-      fullName: 'Dr. Priya Sharma',
+  const passwordHash = await bcrypt.hash(UNIVERSAL_PASSWORD, HASH_ROUNDS);
+
+  // ── 1. ADMINISTRATOR ────────────────────────────────────────────────────────
+  let admin = await User.findOne({ email: 'admin@department.edu' });
+  if (!admin) {
+    admin = await User.create({
+      email: 'admin@department.edu',
+      passwordHash,
+      role: 'admin',
+      fullName: 'Prof. Sarah Jenkins',
       isActive: true,
     });
-    console.log('✅ Coordinator created:', config.seed.coordinatorEmail);
+    console.log('✅ Administrator created: admin@department.edu');
   } else {
-    console.log('⏭  Coordinator already exists');
+    console.log('⏭  Administrator already exists');
   }
 
-  // ── 2. STORAGE LOCATIONS ────────────────────────────────────────────────────
+  // ── 2. COORDINATOR ACCOUNTS ──────────────────────────────────────────────────
+  const coordinatorEmails = [
+    { email: 'coordinator@department.edu', name: 'Dr. Robert Vance' },
+    { email: config.seed.coordinatorEmail, name: 'Dr. Robert Vance' },
+  ];
+
+  let primaryCoordinator: any = null;
+  for (const c of coordinatorEmails) {
+    let coord = await User.findOne({ email: c.email });
+    if (!coord) {
+      coord = await User.create({
+        email: c.email,
+        passwordHash,
+        role: 'coordinator',
+        fullName: c.name,
+        isActive: true,
+      });
+      console.log(`✅ Coordinator created: ${c.email}`);
+    } else {
+      console.log(`⏭  Coordinator already exists: ${c.email}`);
+    }
+    if (!primaryCoordinator) primaryCoordinator = coord;
+  }
+
+  // ── 3. STORAGE LOCATIONS ────────────────────────────────────────────────────
   const loc1 = await upsertLocation({
     locationCode: 'LAB-A-C1',
-    department: 'Computer Science & IT',
+    department: 'Computer Science & Engineering',
     building: 'A Block',
     room: 'Lab 101',
     cupboard: 'Cupboard 1',
-    description: 'Main embedded systems lab',
+    description: 'Main embedded systems and IoT hardware lab',
   });
+
   const loc2 = await upsertLocation({
     locationCode: 'LAB-B-C2',
-    department: 'Computer Science & IT',
+    department: 'Electronics & Communication',
     building: 'B Block',
     room: 'Lab 202',
     cupboard: 'Cupboard 2',
-    description: 'Network & hardware accessories lab',
+    description: 'Networking and testing accessories lab',
   });
 
-  // ── 3. INVENTORY ITEMS ──────────────────────────────────────────────────────
+  const loc3 = await upsertLocation({
+    locationCode: 'LOCKER-SEC',
+    department: 'Computer Science & Engineering',
+    building: 'A Block',
+    room: 'Lab 101',
+    cupboard: 'Security Locker',
+    description: 'High-value instruments and microcontrollers locker',
+  });
+
+  // ── 4. INVENTORY ITEMS ──────────────────────────────────────────────────────
+  // Mode A: Raspberry Pi 4 Development Boards
   const devBoardItem = await upsertInventoryItem({
     itemCode: 'INV-001',
-    name: 'Raspberry Pi 4 Development Board',
+    name: 'Raspberry Pi 4 Model B (4GB)',
     category: 'Development Board',
-    description: '4GB RAM, quad-core ARM Cortex-A72 SoC',
+    description: 'Quad-core Cortex-A72, 4GB LPDDR4, dual micro-HDMI',
     make: 'Raspberry Pi Foundation',
     model: 'Pi 4 Model B',
     trackingMode: 'individual',
     location: loc1._id,
-    createdBy: coordinator._id,
+    createdBy: primaryCoordinator._id,
+    totalAssets: 10,
+    availableAssets: 7,
   });
 
+  // Mode B: USB Type-C Reusable Cables
   const usbCableItem = await upsertInventoryItem({
     itemCode: 'INV-002',
-    name: 'USB Type-C Cable (1m)',
+    name: 'USB Type-C Fast-Charging Cable (1m)',
     category: 'Cable',
-    description: 'USB 3.1 Gen 1, 1 metre, braided',
+    description: 'USB 3.1 braided reusable data cable',
     make: 'Generic',
-    model: 'USB-C 1M',
+    model: 'USB-C 1M Braided',
     trackingMode: 'quantity',
     location: loc2._id,
-    createdBy: coordinator._id,
+    createdBy: primaryCoordinator._id,
     totalStock: 20,
-    availableQty: 17,   // 3 currently issued
-    issuedQty: 3,
+    availableQty: 15,
+    issuedQty: 5,
+    damagedQty: 0,
+    lostQty: 0,
+    maintenanceQty: 0,
   });
 
-  // Seed initial stock transaction for USB cables
+  // Mode A: Arduino Uno R3 Boards
+  const arduinoItem = await upsertInventoryItem({
+    itemCode: 'INV-003',
+    name: 'Arduino Uno R3 Microcontroller Board',
+    category: 'Microcontroller',
+    description: 'ATmega328P microcontroller with USB interface',
+    make: 'Arduino Official',
+    model: 'Uno R3',
+    trackingMode: 'individual',
+    location: loc3._id,
+    createdBy: primaryCoordinator._id,
+    totalAssets: 5,
+    availableAssets: 4,
+  });
+
+  // Mode B: Digital Multimeters
+  const multimeterItem = await upsertInventoryItem({
+    itemCode: 'INV-004',
+    name: 'Digital Multimeter with Test Probes',
+    category: 'Testing Instrument',
+    description: 'True RMS digital multimeter with continuity buzzer',
+    make: 'Fluke / Mastech',
+    model: 'MAS830L',
+    trackingMode: 'quantity',
+    location: loc2._id,
+    createdBy: primaryCoordinator._id,
+    totalStock: 10,
+    availableQty: 7,
+    issuedQty: 2,
+    damagedQty: 1,
+    lostQty: 0,
+    maintenanceQty: 0,
+  });
+
+  // Initial stock transactions
   const existingStockTx = await StockTransaction.findOne({ inventoryItem: usbCableItem._id });
   if (!existingStockTx) {
     await StockTransaction.create({
@@ -100,14 +196,16 @@ async function seed() {
       fieldAffected: 'availableQty',
       previousValue: 0,
       newValue: 20,
-      reason: 'Initial stock addition',
-      performedBy: coordinator._id,
+      reason: 'Initial departmental stock intake',
+      performedBy: primaryCoordinator._id,
     });
-    console.log('✅ Initial USB cable stock transaction recorded');
+    console.log('✅ USB cable initial stock transaction logged');
   }
 
-  // ── 4. INDIVIDUAL ASSETS (10 dev boards) ────────────────────────────────────
-  const assetDefs = [
+  // ── 5. INDIVIDUAL ASSETS ────────────────────────────────────────────────────
+  // 10 Raspberry Pi Assets (DB-001 to DB-010)
+  const devBoardAssets: any[] = [];
+  const piAssetDefs = [
     { assetId: 'DB-001', serialNumber: 'RP4B-001-2024', condition: 'good', status: 'available' },
     { assetId: 'DB-002', serialNumber: 'RP4B-002-2024', condition: 'good', status: 'available' },
     { assetId: 'DB-003', serialNumber: 'RP4B-003-2024', condition: 'good', status: 'issued' },
@@ -120,314 +218,246 @@ async function seed() {
     { assetId: 'DB-010', serialNumber: 'RP4B-010-2024', condition: 'good', status: 'available' },
   ];
 
-  const assets: any[] = [];
-  for (const def of assetDefs) {
-    const existing = await IndividualAsset.findOne({ assetId: def.assetId });
-    if (!existing) {
-      const asset = await IndividualAsset.create({
+  for (const def of piAssetDefs) {
+    let asset = await IndividualAsset.findOne({ assetId: def.assetId });
+    if (!asset) {
+      asset = await IndividualAsset.create({
         assetId: def.assetId,
         serialNumber: def.serialNumber,
         inventoryItem: devBoardItem._id,
         location: loc1._id,
         condition: def.condition,
         status: def.status,
-        addedBy: coordinator._id,
+        addedBy: primaryCoordinator._id,
+        conditionHistory: [
+          {
+            condition: def.condition,
+            changedBy: primaryCoordinator._id,
+            changedAt: new Date('2026-10-01'),
+            reason: def.condition === 'damaged' ? 'Power surge damage in lab test' : 'Asset verified good',
+          },
+        ],
       });
-      assets.push(asset);
-    } else {
-      assets.push(existing);
+    }
+    devBoardAssets.push(asset);
+  }
+
+  // 5 Arduino Assets (AST-ARD-001 to AST-ARD-005)
+  for (let i = 1; i <= 5; i++) {
+    const assetId = `AST-ARD-00${i}`;
+    const exists = await IndividualAsset.findOne({ assetId });
+    if (!exists) {
+      await IndividualAsset.create({
+        assetId,
+        serialNumber: `ARD-UNO-2024-${i}`,
+        inventoryItem: arduinoItem._id,
+        location: loc3._id,
+        condition: 'good',
+        status: i === 1 ? 'issued' : 'available',
+        addedBy: primaryCoordinator._id,
+      });
     }
   }
 
-  // Update parent item asset counts
-  const totalAssets = 10;
-  const availableAssets = assetDefs.filter((a) => a.status === 'available').length;
-  await InventoryItem.findByIdAndUpdate(devBoardItem._id, { totalAssets, availableAssets });
-  console.log('✅ Individual assets seeded (DB-001 to DB-010)');
+  console.log('✅ Individual assets registered (DB-001..DB-010, AST-ARD-001..AST-ARD-005)');
 
-  // ── 5. STUDENTS ─────────────────────────────────────────────────────────────
+  // ── 6. STUDENTS ─────────────────────────────────────────────────────────────
   const studentDefs = [
-    { enrolment: 'DFIS2601', name: 'Arjun Mehta', email: 'student1@demo.edu' },
-    { enrolment: 'DFIS2602', name: 'Sneha Patel', email: 'student2@demo.edu' },
-    { enrolment: 'DFIS2603', name: 'Rohan Kumar', email: 'student3@demo.edu' },
-    { enrolment: 'DFIS2604', name: 'Priyanka Singh', email: 'student4@demo.edu' },
-    { enrolment: 'DFIS2605', name: 'Vikram Nair', email: 'student5@demo.edu' },
+    {
+      enrolment: 'CS-2024-001',
+      name: 'Jane Doe',
+      email: 'student1@department.edu',
+      programme: 'Computer Engineering',
+      semester: 1,
+    },
+    {
+      enrolment: 'CS-2024-015',
+      name: 'Alex Johnson',
+      email: 'alex@department.edu',
+      programme: 'Computer Engineering',
+      semester: 1,
+    },
+    {
+      enrolment: 'EC-2024-009',
+      name: 'Priya Sharma',
+      email: 'priya@department.edu',
+      programme: 'Electronics & Comm',
+      semester: 1,
+    },
+    {
+      enrolment: 'ME-2024-032',
+      name: 'Carlos Mendez',
+      email: 'carlos@department.edu',
+      programme: 'Mechanical Engineering',
+      semester: 3,
+    },
+    {
+      enrolment: 'DFIS2601',
+      name: 'Arjun Mehta',
+      email: 'student1@demo.edu',
+      programme: 'M.Sc. DFIS',
+      semester: 1,
+    },
   ];
 
-  const students: any[] = [];
+  const studentMap = new Map<string, any>();
   for (const def of studentDefs) {
-    let studentUser = await User.findOne({ email: def.email });
-    if (!studentUser) {
-      studentUser = await User.create({
+    let user = await User.findOne({ email: def.email });
+    if (!user) {
+      user = await User.create({
         email: def.email,
-        passwordHash: await bcrypt.hash(config.seed.studentPassword, HASH_ROUNDS),
+        passwordHash,
         role: 'student',
         fullName: def.name,
         isActive: true,
       });
+      console.log(`✅ Student user created: ${def.email}`);
     }
+
     let student = await Student.findOne({ enrolmentNumber: def.enrolment });
     if (!student) {
       student = await Student.create({
         enrolmentNumber: def.enrolment,
         fullName: def.name,
-        programme: 'M.Sc. DFIS',
-        semester: 1,
+        programme: def.programme,
+        semester: def.semester,
         email: def.email,
-        phone: `+91 98${Math.floor(10000000 + Math.random() * 89999999)}`,
-        user: studentUser._id,
+        phone: '+91 9876543210',
+        address: 'Campus Hostel Block B',
+        user: user._id,
+        isActive: true,
       });
-      await User.findByIdAndUpdate(studentUser._id, { studentProfile: student._id });
+      await User.findByIdAndUpdate(user._id, { studentProfile: student._id });
+      console.log(`✅ Student profile linked: ${def.enrolment}`);
     }
-    students.push(student);
-  }
-  console.log('✅ Students seeded (DFIS2601–DFIS2605)');
-
-  // ── 6. ISSUE RECORDS ────────────────────────────────────────────────────────
-
-  // Issue 1: Arjun — 2 USB cables (active, not overdue) - issued 5 Oct 2026, due 20 Oct
-  const issue1Exists = await IssueRecord.findOne({ student: students[0]._id, status: 'active' });
-  if (!issue1Exists) {
-    const issueDate1 = new Date('2026-10-05T10:00:00.000Z');
-    const dueDate1 = addCalendarDays(issueDate1, 15); // 20 Oct
-
-    const issueRec1 = await IssueRecord.create({
-      student: students[0]._id,
-      issuedBy: coordinator._id,
-      issueDate: issueDate1,
-      purpose: 'Digital forensics lab experiment',
-      status: 'active',
-      lines: [],
-    });
-
-    const line1 = await IssueLine.create({
-      issueRecord: issueRec1._id,
-      inventoryItem: usbCableItem._id,
-      individualAsset: null,
-      issuedQty: 2,
-      returnedQty: 0,
-      outstandingQty: 2,
-      issueDate: issueDate1,
-      dueDate: dueDate1,
-      renewalCount: 0,
-      maxRenewals: 3,
-      status: 'active',
-    });
-
-    await IssueRecord.findByIdAndUpdate(issueRec1._id, { lines: [line1._id] });
-    console.log('✅ Issue 1 seeded (Arjun — 2 USB cables, due 20 Oct)');
+    studentMap.set(def.enrolment, student);
   }
 
-  // Issue 2: Sneha — DB-003 dev board (OVERDUE — issued 25 Sep, due 10 Oct)
-  const issue2Exists = await IssueRecord.findOne({ student: students[1]._id });
-  if (!issue2Exists) {
-    const issueDate2 = new Date('2026-09-25T09:00:00.000Z');
-    const dueDate2 = addCalendarDays(issueDate2, 15); // 10 Oct — OVERDUE (today is 13 Oct)
+  // ── 7. SEED REALISTIC LOAN SCENARIOS ─────────────────────────────────────────
+  const jane = studentMap.get('CS-2024-001');
+  const alex = studentMap.get('CS-2024-015');
 
-    const asset3 = assets.find((a) => a.assetId === 'DB-003');
+  // Scenario 1: Jane Doe (Active loan: 1 Dev Board + 1 USB cable, with 1 pending renewal)
+  if (jane) {
+    const existingJaneIssue = await IssueRecord.findOne({ student: jane._id });
+    if (!existingJaneIssue) {
+      const issueDate = new Date('2026-10-01');
+      const dueDate = calculateDueDate(issueDate);
 
-    const issueRec2 = await IssueRecord.create({
-      student: students[1]._id,
-      issuedBy: coordinator._id,
-      issueDate: issueDate2,
-      purpose: 'Network packet analysis project',
-      status: 'overdue',
-      lines: [],
-    });
+      const db3Asset = await IndividualAsset.findOne({ assetId: 'DB-003' });
 
-    const line2 = await IssueLine.create({
-      issueRecord: issueRec2._id,
-      inventoryItem: devBoardItem._id,
-      individualAsset: asset3._id,
-      issuedQty: 1,
-      returnedQty: 0,
-      outstandingQty: 1,
-      issueDate: issueDate2,
-      dueDate: dueDate2,
-      renewalCount: 0,
-      maxRenewals: 3,
-      status: 'overdue',
-    });
+      const issue = await IssueRecord.create({
+        student: jane._id,
+        issuedBy: primaryCoordinator._id,
+        issueDate,
+        purpose: 'Embedded Systems Lab Mini Project',
+        status: 'active',
+        lines: [],
+      });
 
-    await IssueRecord.findByIdAndUpdate(issueRec2._id, { lines: [line2._id] });
-    await IndividualAsset.findByIdAndUpdate(asset3._id, {
-      status: 'issued',
-      currentIssue: line2._id,
-    });
+      const line1 = await IssueLine.create({
+        issueRecord: issue._id,
+        inventoryItem: devBoardItem._id,
+        individualAsset: db3Asset?._id,
+        issuedQty: 1,
+        returnedQty: 0,
+        outstandingQty: 1,
+        issueDate,
+        dueDate,
+        renewalCount: 0,
+        maxRenewals: 3,
+        status: 'active',
+      });
 
-    // Add pending renewal request for this overdue issue
-    // Note: Renewal was requested BEFORE the due date (on 9 Oct, before 10 Oct due)
-    await RenewalRequest.create({
-      issueLine: line2._id,
-      issueRecord: issueRec2._id,
-      student: students[1]._id,
-      requestedBy: (await User.findOne({ studentProfile: students[1]._id }))?._id,
-      requestDate: new Date('2026-10-09T08:00:00.000Z'),
-      previousDueDate: dueDate2,
-      proposedDueDate: addCalendarDays(dueDate2, 15),
-      status: 'pending',
-    });
+      if (db3Asset) {
+        await IndividualAsset.findByIdAndUpdate(db3Asset._id, { currentIssue: line1._id });
+      }
 
-    console.log('✅ Issue 2 seeded (Sneha — DB-003, OVERDUE 3 days) + pending renewal');
+      const line2 = await IssueLine.create({
+        issueRecord: issue._id,
+        inventoryItem: usbCableItem._id,
+        individualAsset: null,
+        issuedQty: 1,
+        returnedQty: 0,
+        outstandingQty: 1,
+        issueDate,
+        dueDate,
+        renewalCount: 0,
+        maxRenewals: 3,
+        status: 'active',
+      });
+
+      await IssueRecord.findByIdAndUpdate(issue._id, { lines: [line1._id, line2._id] });
+
+      // Create a pending renewal request for Line 1
+      await RenewalRequest.create({
+        issueLine: line1._id,
+        issueRecord: issue._id,
+        student: jane._id,
+        requestedBy: jane.user,
+        requestDate: new Date('2026-10-12'),
+        previousDueDate: dueDate,
+        proposedDueDate: calculateRenewalDueDate(dueDate),
+        status: 'pending',
+        remarks: 'Require 15 extra days for sensor calibration tests',
+      });
+
+      console.log('✅ Scenario 1 seeded: Jane Doe active loan with pending renewal request');
+    }
   }
 
-  // Issue 3: Rohan — 1 USB cable partially returned
-  const issue3Exists = await IssueRecord.findOne({ student: students[2]._id });
-  if (!issue3Exists) {
-    const issueDate3 = new Date('2026-10-01T11:00:00.000Z');
-    const dueDate3 = addCalendarDays(issueDate3, 15); // 16 Oct
+  // Scenario 2: Alex Johnson (Overdue loan: DB-004 past due date by 7 days)
+  if (alex) {
+    const existingAlexIssue = await IssueRecord.findOne({ student: alex._id });
+    if (!existingAlexIssue) {
+      const pastIssueDate = new Date('2026-09-20');
+      const pastDueDate = calculateDueDate(pastIssueDate); // Oct 5 (overdue)
 
-    const issueRec3 = await IssueRecord.create({
-      student: students[2]._id,
-      issuedBy: coordinator._id,
-      issueDate: issueDate3,
-      purpose: 'Forensics tool connectivity testing',
-      status: 'partially_returned',
-      lines: [],
-    });
+      const db4Asset = await IndividualAsset.findOne({ assetId: 'DB-004' });
 
-    const line3 = await IssueLine.create({
-      issueRecord: issueRec3._id,
-      inventoryItem: usbCableItem._id,
-      individualAsset: null,
-      issuedQty: 5,
-      returnedQty: 2,
-      outstandingQty: 3,
-      issueDate: issueDate3,
-      dueDate: dueDate3,
-      renewalCount: 0,
-      maxRenewals: 3,
-      status: 'active',
-    });
+      const issue = await IssueRecord.create({
+        student: alex._id,
+        issuedBy: primaryCoordinator._id,
+        issueDate: pastIssueDate,
+        purpose: 'IoT Gateway Capstone Work',
+        status: 'overdue',
+        lines: [],
+      });
 
-    await IssueRecord.findByIdAndUpdate(issueRec3._id, { lines: [line3._id] });
+      const line1 = await IssueLine.create({
+        issueRecord: issue._id,
+        inventoryItem: devBoardItem._id,
+        individualAsset: db4Asset?._id,
+        issuedQty: 1,
+        returnedQty: 0,
+        outstandingQty: 1,
+        issueDate: pastIssueDate,
+        dueDate: pastDueDate,
+        renewalCount: 0,
+        maxRenewals: 3,
+        status: 'overdue',
+      });
 
-    // Return transaction for 2 returned cables
-    await ReturnTransaction.create({
-      issueLine: line3._id,
-      issueRecord: issueRec3._id,
-      student: students[2]._id,
-      inventoryItem: usbCableItem._id,
-      individualAsset: null,
-      returnDate: new Date('2026-10-08T10:00:00.000Z'),
-      quantityReturned: 2,
-      conditionOnReturn: 'good',
-      receivedBy: coordinator._id,
-      remarks: 'Partial return — 3 cables still in use',
-      restoredToAvailable: 2,
-      markedDamaged: 0,
-      markedLost: 0,
-    });
+      if (db4Asset) {
+        await IndividualAsset.findByIdAndUpdate(db4Asset._id, { currentIssue: line1._id });
+      }
 
-    // Adjust USB cable stock for partial return — availableQty was 17 above (accounts for 3 outstanding)
-    // The issued=3 in usbCableItem reflects: 2 from issue1 + 1 from issue4 (DB-004 is individual)
-    // Actually: Rohan has 5 issued - 2 returned = 3 outstanding. Arjun has 2. Total issued = 5.
-    // We already set availableQty=17, issuedQty=3 above; let's correct to match real data:
-    // total=20, issued=5 (2 arjun + 3 rohan outstanding), available=15
-    await InventoryItem.findByIdAndUpdate(usbCableItem._id, {
-      availableQty: 15,
-      issuedQty: 5,
-    });
-
-    console.log('✅ Issue 3 seeded (Rohan — 5 USB cables, 2 returned, 3 outstanding)');
+      await IssueRecord.findByIdAndUpdate(issue._id, { lines: [line1._id] });
+      console.log('✅ Scenario 2 seeded: Alex Johnson overdue loan (blocks new borrowing)');
+    }
   }
 
-  // Issue 4: Priyanka — DB-004 issued and RETURNED (completed)
-  const issue4Exists = await IssueRecord.findOne({ student: students[3]._id });
-  if (!issue4Exists) {
-    const issueDate4 = new Date('2026-09-15T09:00:00.000Z');
-    const dueDate4 = addCalendarDays(issueDate4, 15); // 30 Sep
-
-    const asset4 = assets.find((a) => a.assetId === 'DB-004');
-
-    const issueRec4 = await IssueRecord.create({
-      student: students[3]._id,
-      issuedBy: coordinator._id,
-      issueDate: issueDate4,
-      purpose: 'Completed lab session',
-      status: 'returned',
-      lines: [],
-    });
-
-    const line4 = await IssueLine.create({
-      issueRecord: issueRec4._id,
-      inventoryItem: devBoardItem._id,
-      individualAsset: asset4._id,
-      issuedQty: 1,
-      returnedQty: 1,
-      outstandingQty: 0,
-      issueDate: issueDate4,
-      dueDate: dueDate4,
-      renewalCount: 1,
-      maxRenewals: 3,
-      status: 'returned',
-    });
-
-    await IssueRecord.findByIdAndUpdate(issueRec4._id, { lines: [line4._id] });
-
-    // Return transaction
-    await ReturnTransaction.create({
-      issueLine: line4._id,
-      issueRecord: issueRec4._id,
-      student: students[3]._id,
-      inventoryItem: devBoardItem._id,
-      individualAsset: asset4._id,
-      returnDate: new Date('2026-09-28T14:00:00.000Z'),
-      quantityReturned: 1,
-      conditionOnReturn: 'good',
-      receivedBy: coordinator._id,
-      remarks: 'Returned in perfect condition',
-      restoredToAvailable: 1,
-      markedDamaged: 0,
-      markedLost: 0,
-    });
-
-    // Approved renewal record
-    await RenewalRequest.create({
-      issueLine: line4._id,
-      issueRecord: issueRec4._id,
-      student: students[3]._id,
-      requestedBy: (await User.findOne({ studentProfile: students[3]._id }))?._id,
-      requestDate: new Date('2026-09-28T08:00:00.000Z'),
-      previousDueDate: dueDate4,
-      proposedDueDate: addCalendarDays(dueDate4, 15),
-      status: 'approved',
-      decidedBy: coordinator._id,
-      decidedAt: new Date('2026-09-28T09:00:00.000Z'),
-      remarks: 'Approved — student requested 1 day before due',
-    });
-
-    // DB-004 is "issued" in seed — but was returned. Mark it available
-    await IndividualAsset.findByIdAndUpdate(asset4._id, {
-      status: 'available',
-      condition: 'good',
-      currentIssue: null,
-    });
-
-    console.log('✅ Issue 4 seeded (Priyanka — DB-004, returned + approved renewal)');
-  }
-
-  // ── 7. DAMAGED ASSET (DB-006) ────────────────────────────────────────────────
-  const db6 = await IndividualAsset.findOne({ assetId: 'DB-006' });
-  if (db6 && db6.conditionHistory.length === 0) {
-    await IndividualAsset.findByIdAndUpdate(db6._id, {
-      $push: {
-        conditionHistory: {
-          condition: 'damaged',
-          changedBy: coordinator._id,
-          changedAt: new Date('2026-10-10T11:00:00.000Z'),
-          reason: 'Burnt during power surge incident',
-        },
-      },
-    });
-    console.log('✅ DB-006 damaged condition history added');
-  }
-
-  console.log('\n🎉 Seed complete! Demo accounts:');
-  console.log(`   Coordinator : ${config.seed.coordinatorEmail} / ${config.seed.coordinatorPassword}`);
-  studentDefs.forEach((s) => {
-    console.log(`   Student     : ${s.email} / ${config.seed.studentPassword} (${s.enrolment})`);
-  });
+  console.log('\n======================================================');
+  console.log('🎉 REAL MONGODB DATABASE SEEDING COMPLETED SUCCESSFULLY!');
+  console.log('======================================================');
+  console.log('All accounts password: demo1234');
+  console.log('  • Admin       : admin@department.edu');
+  console.log('  • Coordinator : coordinator@department.edu');
+  console.log('  • Student 1   : student1@department.edu  (Roll: CS-2024-001)');
+  console.log('  • Student 2   : alex@department.edu      (Roll: CS-2024-015 - Overdue)');
+  console.log('  • Student 3   : priya@department.edu     (Roll: EC-2024-009)');
+  console.log('  • Student 4   : carlos@department.edu    (Roll: ME-2024-032)');
+  console.log('======================================================\n');
 
   await mongoose.disconnect();
 }
@@ -452,6 +482,6 @@ async function upsertInventoryItem(data: any) {
 }
 
 seed().catch((err) => {
-  console.error('❌ Seed failed:', err);
+  console.error('❌ Seeding failed:', err);
   process.exit(1);
 });

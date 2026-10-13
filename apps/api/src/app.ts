@@ -4,8 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { config } from './config';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
-import { isMemoryMode } from './database/connection';
-import { mockRouter } from './database/mockRoutes';
+import mongoose from 'mongoose';
 
 // Mongoose Database Routes
 import authRoutes from './modules/auth/auth.routes';
@@ -45,18 +44,24 @@ if (config.env !== 'test') {
 
 // Health check
 app.get('/health', (req, res) => {
+  const isConnected = mongoose.connection.readyState === 1;
   res.json({
-    status: 'ok',
-    mode: isMemoryMode ? 'in-memory-store' : 'mongodb',
+    status: isConnected ? 'ok' : 'degraded',
+    database: isConnected ? 'connected' : 'disconnected',
+    dbName: mongoose.connection.name || null,
     env: config.env,
     timestamp: new Date().toISOString(),
   });
 });
 
-// If running in in-memory mode, route to mockRouter under /api/v1
+// API Readiness Guard — Fail fast with 503 instead of buffering/hanging
 app.use('/api/v1', (req, res, next) => {
-  if (isMemoryMode) {
-    return mockRouter(req, res, next);
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      error: 'Database Disconnected',
+      message: 'MongoDB is currently not connected. Please verify your MONGODB_URI credentials in .env and ensure your MongoDB Atlas cluster is active and your IP is whitelisted.',
+    });
   }
   next();
 });

@@ -31,8 +31,6 @@ const StorageLocationSchema = new Schema<IStorageLocation>(
   { timestamps: true }
 );
 
-StorageLocationSchema.index({ locationCode: 1 }, { unique: true });
-
 export const StorageLocation = mongoose.model<IStorageLocation>(
   'StorageLocation',
   StorageLocationSchema

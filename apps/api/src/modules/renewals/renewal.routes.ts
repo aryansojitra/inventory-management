@@ -7,9 +7,33 @@ import { z } from 'zod';
 const router = Router();
 router.use(authenticate);
 
-router.get('/', authorize('coordinator', 'admin'), getAllRenewals);
-router.post('/', authorize('student'), validateBody(z.object({ issueLineId: z.string().min(1) })), requestRenewal);
-router.put('/:id/approve', authorize('coordinator', 'admin'), validateBody(z.object({ remarks: z.string().optional() })), approveRenewal);
-router.put('/:id/reject', authorize('coordinator', 'admin'), validateBody(z.object({ remarks: z.string().min(1) })), rejectRenewal);
+const requestSchema = z
+  .object({
+    issueLineId: z.string().optional(),
+    lineId: z.string().optional(),
+    issueId: z.string().optional(),
+    reason: z.string().optional(),
+    remarks: z.string().optional(),
+    daysRequested: z.number().int().min(1).optional(),
+  })
+  .refine((d) => d.issueLineId || d.lineId, {
+    message: 'issueLineId or lineId is required',
+  });
+
+const reviewSchema = z.object({
+  remarks: z.string().optional(),
+  reviewNotes: z.string().optional(),
+});
+
+router.post('/request', authorize('student', 'coordinator', 'admin'), validateBody(requestSchema), requestRenewal);
+router.post('/', authorize('student', 'coordinator', 'admin'), validateBody(requestSchema), requestRenewal);
+
+router.patch('/:id/approve', authorize('coordinator', 'admin'), validateBody(reviewSchema), approveRenewal);
+router.post('/:id/approve', authorize('coordinator', 'admin'), validateBody(reviewSchema), approveRenewal);
+
+router.patch('/:id/reject', authorize('coordinator', 'admin'), validateBody(reviewSchema), rejectRenewal);
+router.post('/:id/reject', authorize('coordinator', 'admin'), validateBody(reviewSchema), rejectRenewal);
+
+router.get('/', getAllRenewals);
 
 export default router;

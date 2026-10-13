@@ -15,6 +15,7 @@
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "test": "npm run test --workspace=apps/api",
     "seed": "npm run seed --workspace=apps/api",
+    "check:db": "npm run check:db --workspace=apps/api",
     "lint": "npm run lint --workspace=apps/api && npm run lint --workspace=apps/web"
   },
   "devDependencies": {

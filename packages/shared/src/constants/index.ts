@@ -90,7 +90,9 @@ export const AUDIT_ACTIONS = {
 } as const;
 
 export const BORROWING_DAYS = 15;
+export const DEFAULT_BORROWING_DAYS = 15;
 export const DEFAULT_MAX_RENEWALS = 3;
+export const STUDENT_MAX_LOANS = 5;
 
 export const NOTIFICATION_TYPES = {
   DUE_SOON: 'due_soon',

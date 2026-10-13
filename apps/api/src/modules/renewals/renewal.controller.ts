@@ -4,29 +4,35 @@ import { asyncHandler, sendSuccess, sendPaginated, parsePagination } from '../..
 import { AuthRequest } from '../../middleware/auth.middleware';
 
 export const requestRenewal = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { issueLineId } = req.body;
+  let studentProfileId = req.user!.studentProfileId;
+  if (!studentProfileId && req.user!.role === 'student') {
+    const student = await (await import('../students/student.model')).Student.findOne({ user: req.user!.userId });
+    if (student) studentProfileId = student._id.toString();
+  }
   const renewal = await renewalService.requestRenewal(
-    issueLineId,
+    req.body,
     req.user!.userId,
-    req.user!.studentProfileId!
+    studentProfileId
   );
-  sendSuccess(res, renewal, 'Renewal request submitted', 201);
+  sendSuccess(res, renewal, 'Renewal request submitted successfully', 201);
 });
 
 export const approveRenewal = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const remarks = req.body.reviewNotes || req.body.remarks || '';
   const renewal = await renewalService.approveRenewal(
     req.params.id,
-    req.body.remarks || '',
+    remarks,
     req.user!.userId,
     req.user!.role
   );
-  sendSuccess(res, renewal, 'Renewal approved');
+  sendSuccess(res, renewal, 'Renewal approved successfully');
 });
 
 export const rejectRenewal = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const remarks = req.body.reviewNotes || req.body.remarks || '';
   const renewal = await renewalService.rejectRenewal(
     req.params.id,
-    req.body.remarks || '',
+    remarks,
     req.user!.userId,
     req.user!.role
   );

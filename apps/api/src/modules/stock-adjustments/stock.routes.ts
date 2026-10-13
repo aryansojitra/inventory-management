@@ -9,26 +9,41 @@ const router = Router();
 router.use(authenticate);
 router.use(authorize('coordinator', 'admin'));
 
-router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { page, limit, skip } = parsePagination(req.query);
-  const { inventoryItemId, transactionType } = req.query as any;
+router.get(
+  '/',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { page, limit, skip } = parsePagination(req.query);
+    const { inventoryItemId, itemId, transactionType } = req.query as any;
 
-  const filter: any = {};
-  if (inventoryItemId) filter.inventoryItem = inventoryItemId;
-  if (transactionType) filter.transactionType = transactionType;
+    const filter: any = {};
+    const targetItem = inventoryItemId || itemId;
+    if (targetItem) filter.inventoryItem = targetItem;
+    if (transactionType) filter.transactionType = transactionType;
 
-  const [transactions, total] = await Promise.all([
-    StockTransaction.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('inventoryItem', 'name itemCode')
-      .populate('performedBy', 'fullName')
-      .lean(),
-    StockTransaction.countDocuments(filter),
-  ]);
+    const [transactions, total] = await Promise.all([
+      StockTransaction.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('inventoryItem', 'name itemCode category')
+        .populate('performedBy', 'fullName email')
+        .lean(),
+      StockTransaction.countDocuments(filter),
+    ]);
 
-  sendPaginated(res, transactions, total, page, limit);
-}));
+    const mapped = transactions.map((tx) => ({
+      ...tx,
+      id: tx._id.toString(),
+      transactionNumber: `TXN-${tx._id.toString().slice(-6).toUpperCase()}`,
+      itemId: tx.inventoryItem,
+      type: tx.transactionType,
+      quantityDelta: tx.quantityChange,
+      previousQuantity: tx.previousValue || 0,
+      newQuantity: tx.newValue || 0,
+    }));
+
+    sendPaginated(res, mapped, total, page, limit);
+  })
+);
 
 export default router;
