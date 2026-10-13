@@ -10,7 +10,7 @@ interface AuthContextType {
   isCoordinator: boolean;
   isStudent: boolean;
   isAdmin: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<User>;
   quickLogin: (role: 'coordinator' | 'student' | 'admin') => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -45,7 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = async (payload: LoginPayload) => {
+  const login = async (payload: LoginPayload): Promise<User> => {
     setIsLoading(true);
     try {
       const { token: newToken, user: newUser } = await authService.login(payload);
@@ -53,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('dims_user', JSON.stringify(newUser));
       setToken(newToken);
       setUser(newUser);
+      return newUser;
     } finally {
       setIsLoading(false);
     }
