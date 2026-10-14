@@ -200,7 +200,7 @@ export class IssueService {
 
         if (item.availableQty < qty) {
           throw createError(
-            `Insufficient stock for ${item.name}. Requested: ${qty}, but only ${item.availableQty} available.`,
+            `${qty} ${item.name} were requested, but only ${item.availableQty} are currently available.`,
             409
           );
         }

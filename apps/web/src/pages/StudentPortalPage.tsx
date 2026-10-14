@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { issueService } from '../services/issueService';
-import { IssueRecord, IssueLine } from '../types';
+import { IssueRecord, IssueLine, RenewalRequest } from '../types';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -17,6 +17,8 @@ import {
   Calendar,
   Sparkles,
   QrCode,
+  FileCheck,
+  BellRing,
 } from 'lucide-react';
 import { formatDate, calculateOverdueDays } from '../lib/utils';
 import { getErrorMessage } from '../services/api';
@@ -24,6 +26,7 @@ import { getErrorMessage } from '../services/api';
 export const StudentPortalPage: React.FC = () => {
   const { user } = useAuth();
   const [issues, setIssues] = useState<IssueRecord[]>([]);
+  const [renewals, setRenewals] = useState<RenewalRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedLineForRenewal, setSelectedLineForRenewal] = useState<{
     issueId: string;
@@ -34,11 +37,15 @@ export const StudentPortalPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadMyIssues = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const data = await issueService.getMyIssues();
-      setIssues(data);
+      const [issueData, renewalData] = await Promise.all([
+        issueService.getMyIssues().catch(() => []),
+        issueService.getAllRenewals().then((res) => res.data).catch(() => []),
+      ]);
+      setIssues(issueData);
+      setRenewals(renewalData);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -47,7 +54,7 @@ export const StudentPortalPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadMyIssues();
+    loadData();
   }, []);
 
   const handleRequestRenewal = async (e: React.FormEvent) => {
@@ -65,9 +72,9 @@ export const StudentPortalPage: React.FC = () => {
         reason: renewalReason,
       });
 
-      setSuccessMsg('Renewal request submitted! Awaiting coordinator approval.');
+      setSuccessMsg('Renewal request submitted! Awaiting coordinator review and approval.');
       setSelectedLineForRenewal(null);
-      loadMyIssues();
+      loadData();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -76,8 +83,21 @@ export const StudentPortalPage: React.FC = () => {
   };
 
   // Separate active vs past issues
-  const activeIssues = issues.filter((i) => i.status === 'active' || i.status === 'overdue' || i.status === 'partially_returned');
+  const activeIssues = issues.filter(
+    (i) => i.status === 'active' || i.status === 'overdue' || i.status === 'partially_returned'
+  );
   const pastIssues = issues.filter((i) => i.status === 'returned');
+
+  // Compute overdue vs upcoming due lines
+  const allActiveLines = activeIssues.flatMap((i) =>
+    (i.lines || []).map((l) => ({ line: l, issue: i }))
+  );
+
+  const overdueLines = allActiveLines.filter((al) => calculateOverdueDays(al.line.dueDate) > 0);
+  const upcomingLines = allActiveLines.filter((al) => {
+    const days = calculateOverdueDays(al.line.dueDate);
+    return days <= 0 && days >= -3; // Due within next 3 days
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -106,7 +126,7 @@ export const StudentPortalPage: React.FC = () => {
             <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/20 text-center">
               <p className="text-[10px] uppercase font-bold text-blue-200">Active Borrowings</p>
               <p className="text-xl font-extrabold text-white">
-                {activeIssues.reduce((acc, curr) => acc + (curr.lines?.length || 1), 0)} items
+                {allActiveLines.length} item{allActiveLines.length !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
@@ -116,6 +136,51 @@ export const StudentPortalPage: React.FC = () => {
       {error && <Alert variant="error" onClose={() => setError(null)}>{error}</Alert>}
       {successMsg && <Alert variant="success" onClose={() => setSuccessMsg(null)}>{successMsg}</Alert>}
 
+      {/* Overdue Delinquency Reminder Alert */}
+      {overdueLines.length > 0 && (
+        <Alert
+          variant="error"
+          title={`Action Required: ${overdueLines.length} Borrowed Item${overdueLines.length > 1 ? 's are' : ' is'} Overdue!`}
+        >
+          <div className="space-y-1 mt-1 text-xs">
+            <p>
+              Under department inventory rules, items must be returned within 15 calendar days. Overdue items immediately restrict additional equipment borrowings until returned.
+            </p>
+            {overdueLines.map((ol, idx) => {
+              const days = calculateOverdueDays(ol.line.dueDate);
+              const itemObj = typeof ol.line.itemId === 'object' ? ol.line.itemId : null;
+              return (
+                <p key={idx} className="font-semibold text-rose-800 dark:text-rose-200">
+                  • {itemObj?.name || 'Item'} (Loan #{ol.issue.issueNumber}) was due on {formatDate(ol.line.dueDate)} and is <strong>{days} day{days !== 1 ? 's' : ''} overdue</strong>.
+                </p>
+              );
+            })}
+          </div>
+        </Alert>
+      )}
+
+      {/* Upcoming Due Reminder Alert */}
+      {upcomingLines.length > 0 && (
+        <Alert
+          variant="warning"
+          title={`Notice: ${upcomingLines.length} Item${upcomingLines.length > 1 ? 's are' : ' is'} Due Within 3 Days`}
+        >
+          <div className="space-y-1 mt-1 text-xs">
+            <p>
+              Please return equipment or submit an official renewal request before the due date passes. Submitting a renewal request alone does not extend the due date until approved by the coordinator.
+            </p>
+            {upcomingLines.map((ul, idx) => {
+              const itemObj = typeof ul.line.itemId === 'object' ? ul.line.itemId : null;
+              return (
+                <p key={idx} className="font-medium text-amber-900 dark:text-amber-200">
+                  • {itemObj?.name || 'Item'} is due on <strong>{formatDate(ul.line.dueDate)}</strong>.
+                </p>
+              );
+            })}
+          </div>
+        </Alert>
+      )}
+
       {/* Active Borrowed Items Grid */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -123,7 +188,7 @@ export const StudentPortalPage: React.FC = () => {
             <Clock className="w-4 h-4 text-blue-600" />
             Currently Borrowed Equipment
           </h3>
-          <span className="text-xs text-muted-foreground">Keep items in good condition</span>
+          <span className="text-xs text-muted-foreground">Every item is subject to a 15-day term</span>
         </div>
 
         {isLoading ? (
@@ -154,7 +219,7 @@ export const StudentPortalPage: React.FC = () => {
                             {itemObj?.name || 'Department Item'}
                           </h4>
                           <p className="text-xs text-muted-foreground font-mono">
-                            SKU: {itemObj?.sku} {assetObj ? `• Serial: ${assetObj.assetTag}` : ''}
+                            SKU: {itemObj?.sku} {assetObj ? `• Asset: ${assetObj.assetTag || assetObj.assetId}` : ''}
                           </p>
                         </div>
                         {isLineOverdue ? (
@@ -167,7 +232,7 @@ export const StudentPortalPage: React.FC = () => {
                       <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/50">
                         <div>
                           <span className="text-muted-foreground block text-[10px] uppercase font-bold">
-                            Due Date
+                            Due Date (15d Term)
                           </span>
                           <span className="font-semibold text-foreground flex items-center gap-1 mt-0.5">
                             <Calendar className="w-3.5 h-3.5 text-blue-500" />
@@ -202,7 +267,7 @@ export const StudentPortalPage: React.FC = () => {
                           leftIcon={<RefreshCw className="w-3 h-3" />}
                           className="text-xs py-1 px-3"
                         >
-                          {canRenew ? 'Request Renewal (+15d)' : 'Max Renewals Reached'}
+                          {canRenew ? 'Request Renewal (+15d)' : 'Renewal Unavailable'}
                         </Button>
                       </div>
                     </CardContent>
@@ -213,6 +278,66 @@ export const StudentPortalPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Renewal Requests Tracking Table */}
+      {renewals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-purple-600" />
+              Renewal Request Status & Coordinator Remarks
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Track pending, approved, and rejected extension requests
+            </p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="data-table text-xs">
+                <thead>
+                  <tr>
+                    <th>Submitted Date</th>
+                    <th>Equipment Item</th>
+                    <th>Requested Extension</th>
+                    <th>Status</th>
+                    <th>Coordinator Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renewals.map((ren) => {
+                    const itemObj = (ren.issueLine as any)?.inventoryItem || (ren.issueLine as any)?.itemId;
+                    return (
+                      <tr key={ren._id}>
+                        <td>{formatDate(ren.createdAt)}</td>
+                        <td className="font-semibold text-foreground">
+                          {itemObj?.name || 'Department Item'}
+                        </td>
+                        <td>+15 Calendar Days</td>
+                        <td>
+                          <Badge
+                            variant={
+                              ren.status === 'approved'
+                                ? 'available'
+                                : ren.status === 'rejected'
+                                ? 'overdue'
+                                : 'secondary'
+                            }
+                          >
+                            {ren.status.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="italic text-muted-foreground">
+                          {ren.reviewNotes || (ren.status === 'pending' ? 'Pending coordinator review' : 'No remarks')}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Borrowing History */}
       {pastIssues.length > 0 && (
@@ -266,7 +391,7 @@ export const StudentPortalPage: React.FC = () => {
               Department Loan Renewal Policy:
             </p>
             <p className="text-muted-foreground text-[11px]">
-              Each student is entitled to up to 3 renewals per item loan, provided the item is not overdue and no pending hold requests exist.
+              Submitting a renewal request alone does not extend your due date. The inventory coordinator must review and approve the request. Each approved renewal adds 15 calendar days.
             </p>
           </div>
 

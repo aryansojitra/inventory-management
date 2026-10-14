@@ -55,9 +55,16 @@ export class RenewalService {
     }
 
     const record = issueLine.issueRecord as any;
+    const borrowingStudentId = record.student?._id ? record.student._id.toString() : record.student?.toString();
 
     // Verify ownership: requesting student must be the student who borrowed
-    if (studentProfileId && record.student.toString() !== studentProfileId) {
+    let effectiveStudentId = studentProfileId;
+    if (!effectiveStudentId) {
+      const student = await Student.findOne({ user: studentUserId });
+      if (student) effectiveStudentId = student._id.toString();
+    }
+
+    if (effectiveStudentId && borrowingStudentId !== effectiveStudentId) {
       throw createError('Access denied: You can only request renewals for items issued to your account', 403);
     }
 

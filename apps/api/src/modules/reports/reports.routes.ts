@@ -8,6 +8,7 @@ import { StockTransaction } from '../stock-adjustments/stockTransaction.model';
 import { ReturnTransaction } from '../returns/return.model';
 import { RenewalRequest } from '../renewals/renewal.model';
 import { IndividualAsset } from '../assets/asset.model';
+import { StorageLocation } from '../locations/location.model';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { Response } from 'express';
 import { calculateOverdueDays } from '../../utils/dateUtils';
@@ -358,6 +359,50 @@ router.get(
     ]);
 
     sendSuccess(res, result, 'Programme-wise activity');
+  })
+);
+
+// 11. Laboratory-wise activity & inventory allocation
+router.get(
+  '/laboratory-activity',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const locations = await StorageLocation.find({ isActive: true }).lean();
+    const items = await InventoryItem.find({ isRetired: false }).lean();
+    const assets = await IndividualAsset.find().lean();
+
+    const result = locations.map((loc) => {
+      const locIdStr = loc._id.toString();
+      const locItems = items.filter(
+        (i) => i.location && i.location.toString() === locIdStr
+      );
+      const locAssets = assets.filter(
+        (a) => a.location && a.location.toString() === locIdStr
+      );
+
+      const totalStock = locItems.reduce((acc, i) => acc + (i.totalStock || 0), 0);
+      const availableQty = locItems.reduce((acc, i) => acc + (i.availableQty || 0), 0);
+      const issuedQty = locItems.reduce((acc, i) => acc + (i.issuedQty || 0), 0);
+      const damagedQty = locItems.reduce((acc, i) => acc + (i.damagedQty || 0), 0);
+      const maintenanceQty = locItems.reduce((acc, i) => acc + (i.maintenanceQty || 0), 0);
+
+      return {
+        _id: loc._id.toString(),
+        locationCode: loc.locationCode,
+        department: loc.department,
+        building: loc.building,
+        room: loc.room,
+        cupboard: loc.cupboard,
+        itemCount: locItems.length,
+        assetCount: locAssets.length,
+        totalStock,
+        availableQty,
+        issuedQty,
+        damagedQty,
+        maintenanceQty,
+      };
+    });
+
+    sendSuccess(res, result, 'Laboratory and storage location activity');
   })
 );
 

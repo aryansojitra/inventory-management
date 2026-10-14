@@ -4,6 +4,7 @@ import { IndividualAsset } from '../assets/asset.model';
 import { StockTransaction } from '../stock-adjustments/stockTransaction.model';
 import { AuditLog } from '../audit-logs/auditLog.model';
 import { createError } from '../../utils/apiUtils';
+import { escapeRegex } from '../../middleware/sanitize.middleware';
 import { AUDIT_ACTIONS, STOCK_TRANSACTION_TYPES, TRACKING_MODES } from '../../constants';
 
 export interface CreateInventoryDto {
@@ -64,11 +65,12 @@ export class InventoryService {
     lowStock?: boolean;
   }): Promise<{ items: any[]; total: number }> {
     const filter: any = {};
-    if (query.search) {
+    if (query.search && typeof query.search === 'string') {
+      const sanitized = escapeRegex(query.search.trim());
       filter.$or = [
-        { name: { $regex: query.search, $options: 'i' } },
-        { itemCode: { $regex: query.search, $options: 'i' } },
-        { category: { $regex: query.search, $options: 'i' } },
+        { name: { $regex: sanitized, $options: 'i' } },
+        { itemCode: { $regex: sanitized, $options: 'i' } },
+        { category: { $regex: sanitized, $options: 'i' } },
       ];
     }
     if (query.category && query.category !== 'all') {

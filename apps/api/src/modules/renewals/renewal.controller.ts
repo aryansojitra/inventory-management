@@ -41,7 +41,18 @@ export const rejectRenewal = asyncHandler(async (req: AuthRequest, res: Response
 
 export const getAllRenewals = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const { status, studentId } = req.query as any;
+  let { status, studentId } = req.query as any;
+
+  // Enforce student isolation: Students can only view their own renewal requests
+  if (req.user!.role === 'student') {
+    let studentProfileId = req.user!.studentProfileId;
+    if (!studentProfileId) {
+      const student = await (await import('../students/student.model')).Student.findOne({ user: req.user!.userId });
+      if (student) studentProfileId = student._id.toString();
+    }
+    studentId = studentProfileId;
+  }
+
   const { renewals, total } = await renewalService.getAll({ page, limit, skip, status, studentId });
   sendPaginated(res, renewals, total, page, limit);
 });

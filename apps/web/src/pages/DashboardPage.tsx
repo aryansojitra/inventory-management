@@ -28,21 +28,34 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [overdueIssues, setOverdueIssues] = useState<IssueRecord[]>([]);
+  const [upcomingIssues, setUpcomingIssues] = useState<IssueRecord[]>([]);
   const [recentIssues, setRecentIssues] = useState<IssueRecord[]>([]);
+  const [workbenchTab, setWorkbenchTab] = useState<'overdue' | 'upcoming'>('overdue');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       setIsLoading(true);
       try {
-        const [sum, overdues, recents] = await Promise.all([
+        const [sum, overdues, recents, allActiveRes] = await Promise.all([
           reportService.getDashboardSummary().catch(() => null),
           issueService.getOverdueIssues().catch(() => []),
           issueService.getAllIssues({ limit: 5 }).then((res) => res.data).catch(() => []),
+          issueService.getAllIssues({ status: 'active', limit: 50 }).then((res) => res.data).catch(() => []),
         ]);
         if (sum) setSummary(sum);
         setOverdueIssues(overdues);
         setRecentIssues(recents);
+
+        const upcomings = allActiveRes.filter((issue) => {
+          const dueDate =
+            issue.expectedReturnDate ||
+            (issue as any).dueDate ||
+            (issue.lines && (issue.lines[0] as any)?.dueDate);
+          const days = calculateOverdueDays(dueDate);
+          return days <= 0 && days >= -3;
+        });
+        setUpcomingIssues(upcomings);
       } catch (err) {
         console.error('Error loading dashboard:', err);
       } finally {
@@ -189,99 +202,186 @@ export const DashboardPage: React.FC = () => {
 
       {/* Main Grid: Overdue Table & Category Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Overdue Items Workbench Widget (2 columns) */}
+        {/* Overdue & Upcoming Items Workbench Widget (2 columns) */}
         <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-500" />
-                Overdue Borrowings Requiring Follow-Up
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Students past their due date with active possession
-              </p>
+          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setWorkbenchTab('overdue')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                  workbenchTab === 'overdue'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Overdue Loans ({overdueIssues.length})
+              </button>
+              <button
+                onClick={() => setWorkbenchTab('upcoming')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                  workbenchTab === 'upcoming'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Upcoming Due ({upcomingIssues.length})
+              </button>
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/issue-items')}
+              onClick={() => navigate('/returns')}
               rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
               className="text-xs"
             >
-              View All
+              Process Returns
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            {overdueIssues.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                  <PackageCheck className="w-5 h-5" />
+            {workbenchTab === 'overdue' ? (
+              overdueIssues.length === 0 ? (
+                <div className="p-8 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                    <PackageCheck className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">Zero Overdue Items</p>
+                  <p className="text-xs text-muted-foreground">All issued inventory is currently within loan schedule.</p>
                 </div>
-                <p className="text-sm font-semibold text-foreground">Zero Overdue Items</p>
-                <p className="text-xs text-muted-foreground">All issued inventory is currently within loan schedule.</p>
-              </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Borrower</th>
+                        <th>Equipment</th>
+                        <th>Due Date</th>
+                        <th>Delinquency Notice</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overdueIssues.slice(0, 5).map((issue) => {
+                        const studentObj =
+                          (typeof issue.studentId === 'object' ? issue.studentId : null) ||
+                          (typeof (issue as any).student === 'object' ? (issue as any).student : null);
+                        const studentName = studentObj?.name || (studentObj as any)?.fullName || 'Student';
+                        const studentCode = studentObj?.studentId || (studentObj as any)?.enrolmentNumber || 'XXXXX';
+                        const primaryLine = issue.lines && issue.lines.length > 0 ? issue.lines[0] : null;
+                        const itemObj = (primaryLine as any)?.itemId || (primaryLine as any)?.inventoryItem;
+                        const assetObj = (primaryLine as any)?.assetId || (primaryLine as any)?.individualAsset;
+                        const itemName = itemObj?.name || 'Department Item';
+                        const assetTag = assetObj?.assetTag || assetObj?.assetId || '';
+                        const dueDate =
+                          issue.expectedReturnDate ||
+                          (issue as any).dueDate ||
+                          (primaryLine as any)?.dueDate;
+                        const days = calculateOverdueDays(dueDate);
+                        const displayItem = assetTag ? `${itemName} (${assetTag})` : itemName;
+                        const noticeText = `${displayItem} issued to student enrolment number ${studentCode} was due on ${formatDate(dueDate)} and is overdue by ${days} day${days !== 1 ? 's' : ''}.`;
+
+                        return (
+                          <tr key={issue._id}>
+                            <td>
+                              <div className="font-bold text-foreground text-xs">{studentName}</div>
+                              <div className="text-[11px] font-mono text-muted-foreground">{studentCode}</div>
+                            </td>
+                            <td>
+                              <div className="font-semibold text-foreground text-xs">{itemName}</div>
+                              {assetTag && <div className="text-[11px] font-mono text-blue-600">{assetTag}</div>}
+                            </td>
+                            <td className="text-xs font-mono text-muted-foreground">
+                              {formatDate(dueDate)}
+                            </td>
+                            <td className="text-xs italic text-rose-700 dark:text-rose-300 max-w-xs bg-rose-50/40 dark:bg-rose-950/20">
+                              &ldquo;{noticeText}&rdquo;
+                            </td>
+                            <td>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => navigate(`/returns`)}
+                                className="text-xs py-1 px-2.5"
+                              >
+                                Return
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
             ) : (
-              <div className="overflow-x-auto">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Issue #</th>
-                      <th>Student</th>
-                      <th>Expected Due</th>
-                      <th>Overdue By</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overdueIssues.slice(0, 5).map((issue) => {
-                      const studentObj =
-                        (typeof issue.studentId === 'object' ? issue.studentId : null) ||
-                        (typeof (issue as any).student === 'object' ? (issue as any).student : null);
-                      const studentName = studentObj?.name || (studentObj as any)?.fullName || 'Student';
-                      const studentCode = studentObj?.studentId || (studentObj as any)?.enrolmentNumber || '';
-                      const studentDept = studentObj?.department || (studentObj as any)?.programme || '';
-                      const dueDate =
-                        issue.expectedReturnDate ||
-                        (issue as any).dueDate ||
-                        (issue.lines && (issue.lines[0] as any)?.dueDate);
-                      const days = calculateOverdueDays(dueDate);
-                      return (
-                        <tr key={issue._id}>
-                          <td className="font-semibold text-blue-600">
-                            {issue.issueNumber}
-                          </td>
-                          <td>
-                            <div className="font-medium text-foreground">
-                              {studentName}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {studentCode ? `${studentCode} • ` : ''}{studentDept}
-                            </div>
-                          </td>
-                          <td className="text-xs text-muted-foreground">
-                            {formatDate(dueDate)}
-                          </td>
-                          <td>
-                            <Badge variant="overdue">
-                              {days} day{days !== 1 ? 's' : ''} overdue
-                            </Badge>
-                          </td>
-                          <td>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => navigate(`/returns`)}
-                              className="text-xs py-1 px-2.5"
-                            >
-                              Return
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              upcomingIssues.length === 0 ? (
+                <div className="p-8 text-center space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">No Upcoming Deadlines</p>
+                  <p className="text-xs text-muted-foreground">No active borrowings are due within the next 3 days.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Borrower</th>
+                        <th>Equipment</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upcomingIssues.slice(0, 5).map((issue) => {
+                        const studentObj =
+                          (typeof issue.studentId === 'object' ? issue.studentId : null) ||
+                          (typeof (issue as any).student === 'object' ? (issue as any).student : null);
+                        const studentName = studentObj?.name || (studentObj as any)?.fullName || 'Student';
+                        const studentCode = studentObj?.studentId || (studentObj as any)?.enrolmentNumber || '';
+                        const primaryLine = issue.lines && issue.lines.length > 0 ? issue.lines[0] : null;
+                        const itemObj = (primaryLine as any)?.itemId || (primaryLine as any)?.inventoryItem;
+                        const itemName = itemObj?.name || 'Department Item';
+                        const dueDate =
+                          issue.expectedReturnDate ||
+                          (issue as any).dueDate ||
+                          (primaryLine as any)?.dueDate;
+
+                        return (
+                          <tr key={issue._id}>
+                            <td>
+                              <div className="font-bold text-foreground text-xs">{studentName}</div>
+                              <div className="text-[11px] font-mono text-muted-foreground">{studentCode}</div>
+                            </td>
+                            <td className="font-semibold text-foreground text-xs">
+                              {itemName}
+                            </td>
+                            <td className="text-xs font-mono text-amber-600 font-bold">
+                              {formatDate(dueDate)}
+                            </td>
+                            <td>
+                              <Badge variant="secondary">Due Soon (&le;3d)</Badge>
+                            </td>
+                            <td>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate('/renewals')}
+                                className="text-xs py-1 px-2.5"
+                              >
+                                Renewals
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
           </CardContent>
         </Card>

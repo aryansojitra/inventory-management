@@ -4,6 +4,7 @@ import { Student, IStudent } from './student.model';
 import { User } from '../users/user.model';
 import { IssueLine } from '../issues/issue.model';
 import { createError } from '../../utils/apiUtils';
+import { escapeRegex } from '../../middleware/sanitize.middleware';
 import { ROLES } from '../../constants';
 import { AuditLog } from '../audit-logs/auditLog.model';
 import { AUDIT_ACTIONS } from '../../constants';
@@ -46,11 +47,12 @@ export class StudentService {
     isActive?: string;
   }): Promise<{ students: any[]; total: number }> {
     const filter: any = {};
-    if (query.search) {
+    if (query.search && typeof query.search === 'string') {
+      const sanitized = escapeRegex(query.search.trim());
       filter.$or = [
-        { fullName: { $regex: query.search, $options: 'i' } },
-        { enrolmentNumber: { $regex: query.search, $options: 'i' } },
-        { email: { $regex: query.search, $options: 'i' } },
+        { fullName: { $regex: sanitized, $options: 'i' } },
+        { enrolmentNumber: { $regex: sanitized, $options: 'i' } },
+        { email: { $regex: sanitized, $options: 'i' } },
       ];
     }
     const prog = query.programme || query.department;

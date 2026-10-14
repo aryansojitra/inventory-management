@@ -19,7 +19,7 @@ const createStudentSchema = z.object({
   email: z.string().email(),
   phone: z.string().optional(),
   address: z.string().optional(),
-  password: z.string().min(4).optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters long').optional(),
 }).refine((d) => d.enrolmentNumber || d.studentId, {
   message: 'Enrolment number or student ID is required',
 }).refine((d) => d.fullName || d.name, {

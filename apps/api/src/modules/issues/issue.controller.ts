@@ -25,6 +25,29 @@ export const getAllIssues = asyncHandler(async (req: AuthRequest, res: Response)
 
 export const getIssueById = asyncHandler(async (req: AuthRequest, res: Response) => {
   const record = await issueService.getById(req.params.id);
+
+  // BOLA/IDOR protection: Students can only view their own issue records
+  if (req.user!.role === 'student') {
+    const studentOwnerId =
+      record.student && typeof record.student === 'object'
+        ? (record.student._id || record.student.id)?.toString()
+        : record.student?.toString();
+
+    let studentProfileId = req.user!.studentProfileId;
+    if (!studentProfileId) {
+      const student = await (await import('../students/student.model')).Student.findOne({ user: req.user!.userId });
+      if (student) studentProfileId = student._id.toString();
+    }
+
+    if (!studentOwnerId || studentOwnerId !== studentProfileId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Access denied: You can only view your own borrowing records.',
+      });
+    }
+  }
+
   sendSuccess(res, record);
 });
 

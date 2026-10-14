@@ -33,6 +33,24 @@ export const inventoryService = {
     return res.data.data;
   },
 
+  async adjustStock(
+    id: string,
+    payload: {
+      field: 'damagedQty' | 'lostQty' | 'maintenanceQty' | 'retiredQty';
+      quantity: number;
+      reason: string;
+      transactionType: string;
+    }
+  ): Promise<InventoryItem> {
+    const res = await apiClient.post<ApiResponse<InventoryItem>>(`/inventory/${id}/adjust`, payload);
+    return res.data.data;
+  },
+
+  async retireItem(id: string, reason: string): Promise<InventoryItem> {
+    const res = await apiClient.post<ApiResponse<InventoryItem>>(`/inventory/${id}/retire`, { reason });
+    return res.data.data;
+  },
+
   // Locations
   async getLocations(): Promise<StorageLocation[]> {
     const res = await apiClient.get<PaginatedResponse<StorageLocation>>('/locations');
@@ -41,6 +59,11 @@ export const inventoryService = {
 
   async createLocation(location: Partial<StorageLocation>): Promise<StorageLocation> {
     const res = await apiClient.post<ApiResponse<StorageLocation>>('/locations', location);
+    return res.data.data;
+  },
+
+  async updateLocation(id: string, location: Partial<StorageLocation>): Promise<StorageLocation> {
+    const res = await apiClient.put<ApiResponse<StorageLocation>>(`/locations/${id}`, location);
     return res.data.data;
   },
 
@@ -57,11 +80,18 @@ export const inventoryService = {
     return res.data;
   },
 
+  async getAssetById(id: string): Promise<IndividualAsset> {
+    const res = await apiClient.get<ApiResponse<IndividualAsset>>(`/assets/${id}`);
+    return res.data.data;
+  },
+
   async createAsset(asset: {
     itemId: string;
     assetTag: string;
     serialNumber?: string;
     condition?: string;
+    locationId?: string;
+    notes?: string;
   }): Promise<IndividualAsset> {
     const res = await apiClient.post<ApiResponse<IndividualAsset>>('/assets', asset);
     return res.data.data;
@@ -69,14 +99,19 @@ export const inventoryService = {
 
   async updateAssetCondition(
     id: string,
-    payload: { condition: string; notes?: string }
+    payload: { condition: string; reason?: string; notes?: string }
   ): Promise<IndividualAsset> {
     const res = await apiClient.patch<ApiResponse<IndividualAsset>>(`/assets/${id}/condition`, payload);
     return res.data.data;
   },
 
   // Stock transactions timeline
-  async getStockTransactions(params?: { itemId?: string; page?: number; limit?: number }): Promise<PaginatedResponse<StockTransaction>> {
+  async getStockTransactions(params?: {
+    itemId?: string;
+    transactionType?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<StockTransaction>> {
     const res = await apiClient.get<PaginatedResponse<StockTransaction>>('/stock-adjustments', { params });
     return res.data;
   },

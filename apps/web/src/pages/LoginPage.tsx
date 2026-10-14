@@ -188,6 +188,48 @@ export const LoginPage: React.FC = () => {
                 {loginRole === 'student' ? 'Sign In to Student Portal' : 'Sign In to Operations Dashboard'}
               </Button>
             </form>
+
+            {/* Quick Fill Demo Credentials */}
+            <div className="pt-3 border-t border-slate-800 text-center space-y-2">
+              <p className="text-[11px] text-slate-500 uppercase font-semibold tracking-wider">
+                Demo Credentials (Password: demo1234)
+              </p>
+              <div className="flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginRole('staff');
+                    setEmail('coordinator@department.edu');
+                    setPassword('demo1234');
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-blue-900/40 text-blue-300 hover:bg-blue-800/60 border border-blue-700/50 transition-colors"
+                >
+                  Coordinator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginRole('student');
+                    setEmail('student1@department.edu');
+                    setPassword('demo1234');
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 border border-emerald-700/50 transition-colors"
+                >
+                  Student 1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginRole('staff');
+                    setEmail('admin@department.edu');
+                    setPassword('demo1234');
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-purple-900/40 text-purple-300 hover:bg-purple-800/60 border border-purple-700/50 transition-colors"
+                >
+                  Administrator
+                </button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

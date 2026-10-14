@@ -4,6 +4,7 @@ import { cn, getStatusBadgeClass } from '../../lib/utils';
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?:
     | 'default'
+    | 'secondary'
     | 'available'
     | 'issued'
     | 'overdue'

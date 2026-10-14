@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Alert } from '../components/ui/Alert';
+import { Modal } from '../components/ui/Modal';
 import {
   ArrowUpRight,
   Search,
@@ -22,6 +23,8 @@ import {
   QrCode,
   Layers,
   Sparkles,
+  Printer,
+  FileText,
 } from 'lucide-react';
 import { formatDate } from '../lib/utils';
 import { getErrorMessage } from '../services/api';
@@ -61,6 +64,8 @@ export const IssueItemsPage: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successIssue, setSuccessIssue] = useState<IssueRecord | null>(null);
+  const [issuedStudentSnapshot, setIssuedStudentSnapshot] = useState<Student | null>(null);
+  const [showSlipModal, setShowSlipModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Check if selected return date is on a weekend
@@ -180,7 +185,9 @@ export const IssueItemsPage: React.FC = () => {
         })),
       });
 
+      setIssuedStudentSnapshot(selectedStudent);
       setSuccessIssue(issue);
+      setShowSlipModal(true);
       clearCart();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -214,7 +221,18 @@ export const IssueItemsPage: React.FC = () => {
           title="Item Issue Successful!"
           onClose={() => setSuccessIssue(null)}
         >
-          Transaction <strong>{successIssue.issueNumber}</strong> recorded. Items have been deducted from available stock and linked to the student profile.
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-1">
+            <span>Transaction <strong>{successIssue.issueNumber}</strong> recorded. Items have been deducted from available stock and linked to the student profile.</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSlipModal(true)}
+              leftIcon={<FileText className="w-3.5 h-3.5" />}
+              className="bg-white/90 text-emerald-800 border-emerald-300 hover:bg-white text-xs font-semibold shrink-0"
+            >
+              View & Print Acknowledgement Slip
+            </Button>
+          </div>
         </Alert>
       )}
 
@@ -552,6 +570,152 @@ export const IssueItemsPage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* Official Equipment Issue Acknowledgement Slip Modal */}
+      <Modal
+        isOpen={showSlipModal && !!successIssue}
+        onClose={() => setShowSlipModal(false)}
+        title="Equipment Issue Acknowledgement Slip"
+        description="Official laboratory borrowing voucher with schedule and terms"
+        size="lg"
+      >
+        {successIssue && (
+          <div className="space-y-4 print:space-y-3">
+            {/* Slip Header Banner */}
+            <div className="p-4 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-800 text-white text-center space-y-1">
+              <p className="text-[10px] font-bold tracking-widest uppercase opacity-80">
+                Department of Computer Engineering & Information Security
+              </p>
+              <h3 className="text-base font-bold tracking-tight">
+                LABORATORY EQUIPMENT ISSUE ACKNOWLEDGEMENT
+              </h3>
+              <div className="flex items-center justify-center gap-4 text-xs font-mono pt-1 text-blue-100">
+                <span>Voucher: {successIssue.issueNumber}</span>
+                <span>•</span>
+                <span>Date: {formatDate(successIssue.issueDate || new Date())}</span>
+              </div>
+            </div>
+
+            {/* Student & Borrower Details */}
+            <div className="grid grid-cols-2 gap-3 p-3.5 rounded-lg border border-border bg-card text-xs">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-muted-foreground block">Borrower Name</span>
+                <span className="font-bold text-foreground text-sm">
+                  {issuedStudentSnapshot?.name || (successIssue.studentId as any)?.name || 'Student Borrower'}
+                </span>
+                <span className="block text-muted-foreground mt-0.5">
+                  Enrolment / Roll No: <strong className="text-foreground font-mono">{issuedStudentSnapshot?.studentId || (successIssue.studentId as any)?.studentId || 'N/A'}</strong>
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase text-muted-foreground block">Academic Program & Lab</span>
+                <span className="font-semibold text-foreground">
+                  {issuedStudentSnapshot?.department || (successIssue.studentId as any)?.department || 'General Programme'}
+                  {issuedStudentSnapshot?.semester ? ` • Semester ${issuedStudentSnapshot.semester}` : ''}
+                </span>
+                <span className="block text-muted-foreground mt-0.5">
+                  Purpose: <span className="text-foreground">{successIssue.purpose || purpose || 'Academic Lab Practical'}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Issued Line Items Table */}
+            <div className="border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted text-muted-foreground uppercase text-[10px]">
+                  <tr>
+                    <th className="py-2 px-3 text-left">Item Description</th>
+                    <th className="py-2 px-3 text-left">Tracking Mode</th>
+                    <th className="py-2 px-3 text-left">Asset Tag / Serial</th>
+                    <th className="py-2 px-3 text-center">Qty</th>
+                    <th className="py-2 px-3 text-right">Due Date (15d)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {successIssue.lines && successIssue.lines.length > 0 ? (
+                    successIssue.lines.map((ln: any, idx: number) => {
+                      const itemObj = typeof ln.itemId === 'object' ? ln.itemId : typeof ln.inventoryItem === 'object' ? ln.inventoryItem : null;
+                      const assetObj = typeof ln.assetId === 'object' ? ln.assetId : typeof ln.individualAsset === 'object' ? ln.individualAsset : null;
+                      return (
+                        <tr key={ln._id || idx} className="bg-card">
+                          <td className="py-2 px-3 font-semibold text-foreground">
+                            {itemObj?.name || `Item Line #${idx + 1}`}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Badge variant={assetObj ? 'outline' : 'secondary'} className="text-[10px]">
+                              {assetObj ? 'Serialized Asset' : 'Quantity Reusable'}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-3 font-mono text-blue-600 font-bold">
+                            {assetObj?.assetTag || assetObj?.assetId || 'N/A (Bulk)'}
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold">
+                            {ln.quantity || ln.issuedQty || 1}
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-rose-600 font-mono">
+                            {formatDate(ln.dueDate || successIssue.expectedReturnDate)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="py-4 text-center text-muted-foreground">
+                        Items recorded under loan reference {successIssue.issueNumber}.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Department Rules & Undertaking */}
+            <div className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-[11px] text-amber-900 dark:text-amber-200 space-y-1">
+              <p className="font-bold">Mandatory Department Borrowing Terms:</p>
+              <ul className="list-disc list-inside space-y-0.5 opacity-90">
+                <li>Every issued item must be returned or renewed within <strong>15 calendar days</strong> from the issue date.</li>
+                <li>Submitting a renewal request alone does not extend due dates; coordinator review and approval is required.</li>
+                <li>Equipment must be maintained in usable condition. Unreturned overdue items immediately restrict further borrowings.</li>
+              </ul>
+            </div>
+
+            {/* Signatures */}
+            <div className="grid grid-cols-2 gap-8 pt-4 border-t border-border text-xs">
+              <div className="space-y-6">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Student Acknowledgement</span>
+                <div className="border-b border-border/80 pb-1 text-muted-foreground">
+                  Signature: ____________________________________
+                </div>
+              </div>
+              <div className="space-y-6">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Issuing Coordinator Verification</span>
+                <div className="border-b border-border/80 pb-1 text-muted-foreground">
+                  Authorized Sign & Stamp: ______________________
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-end gap-2.5 pt-3 border-t border-border print:hidden">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                leftIcon={<Printer className="w-4 h-4" />}
+              >
+                Print Slip
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowSlipModal(false)}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

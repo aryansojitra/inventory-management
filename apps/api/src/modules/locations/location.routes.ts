@@ -82,11 +82,32 @@ router.post(
   })
 );
 
+const updateLocationSchema = z.object({
+  department: z.string().optional(),
+  building: z.string().optional(),
+  room: z.string().optional(),
+  name: z.string().optional(),
+  cupboard: z.string().optional(),
+  shelf: z.string().optional(),
+  description: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
 router.put(
   '/:id',
   authorize('coordinator', 'admin'),
+  validateBody(updateLocationSchema),
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const loc = await StorageLocation.findByIdAndUpdate(req.params.id, req.body, { new: true }).lean();
+    const allowedUpdates: Record<string, any> = {};
+    const { department, building, room, name, cupboard, shelf, description, isActive } = req.body;
+    if (department !== undefined) allowedUpdates.department = department;
+    if (building !== undefined) allowedUpdates.building = building;
+    if (room !== undefined || name !== undefined) allowedUpdates.room = room || name;
+    if (cupboard !== undefined || shelf !== undefined) allowedUpdates.cupboard = cupboard || shelf;
+    if (description !== undefined) allowedUpdates.description = description;
+    if (isActive !== undefined) allowedUpdates.isActive = isActive;
+
+    const loc = await StorageLocation.findByIdAndUpdate(req.params.id, allowedUpdates, { new: true }).lean();
     if (!loc) throw createError('Location not found', 404);
     sendSuccess(res, normalizeLocation(loc), 'Location updated successfully');
   })

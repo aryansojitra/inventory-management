@@ -31,7 +31,7 @@ router.get(
       StockTransaction.countDocuments(filter),
     ]);
 
-    const mapped = transactions.map((tx) => ({
+    const mapped = transactions.map((tx: any) => ({
       ...tx,
       id: tx._id.toString(),
       transactionNumber: `TXN-${tx._id.toString().slice(-6).toUpperCase()}`,
@@ -40,6 +40,9 @@ router.get(
       quantityDelta: tx.quantityChange,
       previousQuantity: tx.previousValue || 0,
       newQuantity: tx.newValue || 0,
+      previousBucket: tx.fieldAffected || 'availableQty',
+      newBucket: `${tx.previousValue || 0} → ${tx.newValue || 0} (${tx.fieldAffected || 'availableQty'})`,
+      fieldAffected: tx.fieldAffected,
     }));
 
     sendPaginated(res, mapped, total, page, limit);

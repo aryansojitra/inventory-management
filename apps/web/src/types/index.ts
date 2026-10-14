@@ -42,11 +42,15 @@ export interface Student {
 
 export interface StorageLocation {
   _id: string;
-  code: string;
-  name: string;
+  code?: string;
+  locationCode?: string;
+  name?: string;
+  department?: string;
   building?: string;
   room?: string;
+  cupboard?: string;
   shelf?: string;
+  description?: string;
   isActive: boolean;
 }
 
@@ -66,7 +70,12 @@ export interface InventoryItem {
   lowStockThreshold: number;
   unit: string;
   locationId?: StorageLocation | string;
+  location?: StorageLocation | string;
   isConsumable: boolean;
+  isRetired?: boolean;
+  retiredAt?: string;
+  retiredReason?: string;
+  retiredBy?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -76,9 +85,18 @@ export interface IndividualAsset {
   _id: string;
   itemId: InventoryItem | string;
   assetTag: string;
+  assetId?: string;
   serialNumber?: string;
   condition: AssetCondition;
   status: AssetStatus;
+  locationId?: StorageLocation | string;
+  location?: StorageLocation | string;
+  conditionHistory?: Array<{
+    condition: string;
+    changedBy?: any;
+    changedAt: string;
+    reason: string;
+  }>;
   currentIssueId?: string;
   notes?: string;
   createdAt: string;
@@ -140,7 +158,8 @@ export interface RenewalRequest {
   _id: string;
   requestNumber: string;
   issueId: IssueRecord | string;
-  lineId: IssueLine | string;
+  lineId?: IssueLine | string;
+  issueLine?: any;
   studentId: Student | string;
   requestedBy: User | string;
   currentDueDate: string;

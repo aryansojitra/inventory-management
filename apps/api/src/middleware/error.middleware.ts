@@ -24,7 +24,6 @@ export function errorHandler(
   res.status(statusCode).json({
     success: false,
     message,
-    ...(config.env === 'development' && statusCode === 500 ? { stack: err.stack } : {}),
   });
 }
 

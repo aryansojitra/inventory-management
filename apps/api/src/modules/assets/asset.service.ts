@@ -2,6 +2,7 @@ import { IndividualAsset } from './asset.model';
 import { InventoryItem } from '../inventory/inventory.model';
 import { AuditLog } from '../audit-logs/auditLog.model';
 import { createError } from '../../utils/apiUtils';
+import { escapeRegex } from '../../middleware/sanitize.middleware';
 import { AUDIT_ACTIONS, ASSET_CONDITIONS, ASSET_STATUSES } from '../../constants';
 
 function normalizeAsset(asset: any) {
@@ -35,11 +36,11 @@ export class AssetService {
     if (query.condition && query.condition !== 'all') {
       filter.condition = query.condition;
     }
-    if (query.search) {
-      const q = query.search;
+    if (query.search && typeof query.search === 'string') {
+      const sanitized = escapeRegex(query.search.trim());
       filter.$or = [
-        { assetId: { $regex: q, $options: 'i' } },
-        { serialNumber: { $regex: q, $options: 'i' } },
+        { assetId: { $regex: sanitized, $options: 'i' } },
+        { serialNumber: { $regex: sanitized, $options: 'i' } },
       ];
     }
 
